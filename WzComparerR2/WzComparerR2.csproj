@@ -84,6 +84,9 @@
       <Link>Properties\CommonAssemblyInfo.cs</Link>
     </Compile>
   </ItemGroup>
+  <ItemGroup Condition="!Exists('BuildInfo.cs')">
+    <Compile Include="BuildInfo.cs" />
+  </ItemGroup>
   <ItemGroup>
     <Compile Update="FrmCaptureAniOptions.cs" />
     <Compile Update="FrmOverlayPolygonOptions.cs" />
