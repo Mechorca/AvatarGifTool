@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v2.12.1"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content "AvatarGifTool/AvatarGifTool.csproj"
+          $version = $project.Project.PropertyGroup.Version | Select-Object -First 1
+          if (-not $version) {
+            throw "Version not found in AvatarGifTool.csproj."
+          }
+
+          $tag = "${{ github.ref_name }}"
+          $inputTag = "${{ inputs.tag }}"
+          if ($inputTag) {
+            $tag = $inputTag
+          }
+          if (-not $tag -or $tag -eq "main") {
+            $tag = "v$version"
+          }
+          if (-not $tag.StartsWith("v")) {
+            $tag = "v$tag"
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Publish single exe
+        id: publish
+        shell: pwsh
+        run: |
+          dotnet publish AvatarGifTool\AvatarGifTool.csproj `
+            -c Release -r win-x64 `
+            -p:PublishSingleFile=true `
+            -p:SelfContained=true `
+            -p:EnableWindowsTargeting=true `
+            -p:Platform=x64 `
+            -o AvatarGifTool\dist
+
+          $version = "${{ steps.version.outputs.version }}"
+          $asset = Get-ChildItem "AvatarGifTool/dist" -Filter "AvatarGifTool_v$version.exe" | Select-Object -First 1
+          if (-not $asset) {
+            $asset = Get-ChildItem "AvatarGifTool/dist" -Filter "AvatarGifTool*.exe" | Select-Object -First 1
+          }
+          if (-not $asset) {
+            throw "Published exe not found."
+          }
+
+          "asset=$($asset.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $version = "${{ steps.version.outputs.version }}"
+          $asset = "${{ steps.publish.outputs.asset }}"
+          $title = "AvatarGifTool $version"
+          $notes = @"
+          AvatarGifTool $version
+
+          - Windows 10/11 x64
+          - Self-contained single-file EXE
+          - Requires local Data/Base/Base.wz
+          "@
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --clobber
+          } else {
+            gh release create $tag $asset --title $title --notes $notes --target "${{ github.sha }}"
+          }
