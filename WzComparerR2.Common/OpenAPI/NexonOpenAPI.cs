@@ -1,0 +1,591 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Text.RegularExpressions;
+using System.IO;
+using AES = System.Security.Cryptography.Aes;
+using System.Security.Cryptography;
+using System.Runtime.CompilerServices;
+
+#if NET6_0_OR_GREATER
+using KMS = MapleStory.OpenAPI.KMS;
+using MSEA = MapleStory.OpenAPI.MSEA;
+using TMS = MapleStory.OpenAPI.TMS;
+using MapleStory.OpenAPI.Common;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Encodings.Web;
+
+namespace WzComparerR2.OpenAPI
+{
+    public class NexonOpenAPI
+    {
+        public NexonOpenAPI(string apiKey, string region)
+        {
+            APIKey = apiKey;
+            
+            switch (region)
+            {
+                case "KMS":
+                    this.region = 0;
+                    if (API_KMS == null)
+                    {
+                        API_KMS = new KMS.MapleStoryAPI(apiKey);
+                    }
+                    break;
+
+                case "MSEA":
+                    this.region = 1;
+                    if (API_MSEA == null)
+                    {
+                        API_MSEA = new MSEA.MapleStoryAPI(apiKey);
+                    }
+                    break;
+
+                case "TMS":
+                    this.region = 2;
+                    if (API_TMS == null)
+                    {
+                        API_TMS = new TMS.MapleStoryAPI(apiKey);
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        private string APIKey;
+        private int region;
+        private KMS.MapleStoryAPI API_KMS;
+        private MSEA.MapleStoryAPI API_MSEA;
+        private TMS.MapleStoryAPI API_TMS;
+
+        public bool CheckSameAPIKey(string apiKey)
+        {
+            return APIKey == apiKey;
+        }
+
+        public bool CheckRegion(string region)
+        {
+            switch (region)
+            {
+                case "KMS":
+                    return this.region == 0;
+                case "MSEA":
+                    return this.region == 1;
+                case "TMS":
+                    return this.region == 2;
+                default:
+                    return false;
+            }
+        }
+
+        public async Task<string> GetCharacterOCID(string characterName)
+        {
+            try
+            {
+                MapleStory.OpenAPI.Common.DTO.CharacterDTO character = null;
+                switch (region)
+                {
+                    case 0:
+                        character = await API_KMS.GetCharacter(characterName);
+                        return character.OCID;
+
+                    case 1:
+                        character = await API_MSEA.GetCharacter(characterName);
+                        return character.OCID;
+
+                    case 2:
+                        character = await API_TMS.GetCharacter(characterName);
+                        return character.OCID;
+
+                    default:
+                        return null;
+                }
+            }
+            catch (MapleStoryAPIException e)
+            {
+                switch (e.ErrorCode)
+                {
+                    case MapleStoryAPIErrorCode.OPENAPI00004:
+                        throw new Exception(Utils.GetExceptionMsg(e, forceMsg: $"角色名称不正确。"));
+                    default:
+                        throw new Exception(Utils.GetExceptionMsg(e));
+                }
+                
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        public async Task<UnpackedAvatarData> GetAvatarResult(string ocid)
+        {
+            try
+            {
+                MapleStory.OpenAPI.Common.DTO.CharacterBasicDTO basic = null;
+                switch (region)
+                {
+                    case 0:
+                        basic = await API_KMS.GetCharacterBasic(ocid);
+                        break;
+
+                    case 1:
+                        basic = await API_MSEA.GetCharacterBasic(ocid);
+                        break;
+
+                    case 2:
+                        basic = await API_TMS.GetCharacterBasic(ocid);
+                        break;
+                }
+                var m = Regex.Match(basic.CharacterImage, @"look/([A-Z]+)");
+                if (m.Success)
+                {
+                    var data = m.Groups[1].Value;
+
+                    var decrypted = Utils.Decrypt(data);
+                    var version = Utils.CheckVer(decrypted);
+
+                    var unpackedData = new UnpackedAvatarData(version);
+
+                    Utils.Unpack(unpackedData, decrypted);
+                    unpackedData.SetProperties();
+
+                    return unpackedData;
+                }
+                return null;
+            }
+            catch (MapleStoryAPIException e)
+            {
+                switch (e.ErrorCode)
+                {
+                    default:
+                        throw new Exception(Utils.GetExceptionMsg(e));
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        public async Task<LoadedAvatarData> GetAvatarResult2(string ocid)
+        {
+            var result = new LoadedAvatarData();
+
+            await GetAvatarItems(ocid, result);
+            await GetAvatarCashItems(ocid, result);
+            await GetAvatarBeautyEquipment(ocid, result);
+
+            return result;
+        }
+
+        private async Task GetAvatarItems(string ocid, LoadedAvatarData result)
+        {
+            try
+            { 
+                result.ItemList = new List<string>();
+
+                dynamic item = null;
+                switch (region)
+                {
+                    case 0:
+                        item = await API_KMS.GetCharacterItemEquipment(ocid);
+                        break;
+
+                    case 1:
+                        item = await API_MSEA.GetCharacterItemEquipment(ocid);
+                        break;
+
+                    case 2:
+                        item = await API_TMS.GetCharacterItemEquipment(ocid);
+                        break;
+                }
+                result.Preset = item.PresetNo ?? 0;
+
+                foreach (var it in item.ItemEquipment)
+                {
+                    var m = Regex.Match(it.ItemIcon, @"icon/([A-Z]+)$");
+                    if (m.Success)
+                        result.ItemList.Add(Utils.GetItemID(m.Groups[1].Value));
+                }
+            }
+            catch (MapleStoryAPIException e)
+            {
+                switch (e.ErrorCode)
+                {
+                    default:
+                        throw new Exception(Utils.GetExceptionMsg(e));
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private async Task GetAvatarCashItems(string ocid, LoadedAvatarData result)
+        {
+            try
+            {
+                result.CashBaseItemList = new List<string>();
+                result.CashPresetItemList = new List<string>();
+
+                dynamic item = null;
+                switch (region)
+                {
+                    case 0:
+                        item = await API_KMS.GetCharacterCashItemEquipment(ocid);
+                        break;
+
+                    case 1:
+                        item = await API_MSEA.GetCharacterCashItemEquipment(ocid);
+                        break;
+
+                    case 2:
+                        item = await API_TMS.GetCharacterCashItemEquipment(ocid);
+                        break;
+                }
+                result.CashPreset = item.PresetNo ?? 0;
+
+                foreach (var it in item.CashItemEquipmentBase)
+                {
+                    var m = Regex.Match(it.CashItemIcon, @"icon/([A-Z]+)$");
+                    if (m.Success)
+                        result.CashBaseItemList.Add(Utils.GetItemID(m.Groups[1].Value));
+                }
+
+                if (result.CashPreset > 0)
+                {
+                    foreach (var it in result.CashPreset == 1 ? item.CashItemEquipmentPreset1 : result.CashPreset == 2 ? item.CashItemEquipmentPreset2 : item.CashItemEquipmentPreset3)
+                    {
+                        var m = Regex.Match(it.CashItemIcon, @"icon/([A-Z]+)$");
+                        if (m.Success)
+                            result.CashPresetItemList.Add(Utils.GetItemID(m.Groups[1].Value));
+                    }
+                }
+            }
+            catch (MapleStoryAPIException e)
+            {
+                switch (e.ErrorCode)
+                {
+                    default:
+                        throw new Exception(Utils.GetExceptionMsg(e));
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private async Task GetAvatarBeautyEquipment(string ocid, LoadedAvatarData result)
+        {
+            try
+            {
+                dynamic item = null;
+                switch (region)
+                {
+                    case 0:
+                        item = await API_KMS.GetCharacterBeautyEquipment(ocid);
+                        break;
+
+                    case 1:
+                        item = await API_MSEA.GetCharacterBeautyEquipment(ocid);
+                        break;
+
+                    case 2:
+                        item = await API_TMS.GetCharacterBeautyEquipment(ocid);
+                        break;
+                }
+                result.Gender = item.CharacterGender == "남" ? 0 : 1;
+
+                result.HairInfo = new Dictionary<string, string>
+                {
+                    { "HairName", item.CharacterHair?.HairName ?? "" },
+                    { "BaseColor", item.CharacterHair?.BaseColor ?? "" },
+                    { "MixColor", item.CharacterHair?.MixColor ?? "" },
+                    { "MixRate", item.CharacterHair?.MixRate ?? "0" },
+                };
+
+                result.FaceInfo = new Dictionary<string, string>
+                {
+                    { "FaceName", item.CharacterFace?.FaceName ?? "" },
+                    { "BaseColor", item.CharacterFace?.BaseColor ?? "" },
+                    { "MixColor", item.CharacterFace?.MixColor ?? "" },
+                    { "MixRate", item.CharacterFace?.MixRate ?? "0" },
+                };
+
+                result.SkinInfo = new Dictionary<string, string>
+                {
+                    { "SkinName", item.CharacterSkin?.SkinName ?? "" },
+                    { "ColorStyle", item.CharacterSkin?.ColorStyle ?? "" },
+                    { "Hue", (item.CharacterSkin?.Hue as int?).ToString() ?? "" },
+                    { "Saturation", (item.CharacterSkin?.Saturation as int?).ToString() ?? "" },
+                    { "Brightness", (item.CharacterSkin?.Brightness as int?).ToString() ?? "" },
+                };
+            }
+            catch (MapleStoryAPIException e)
+            {
+                switch (e.ErrorCode)
+                {
+                    default:
+                        throw new Exception(Utils.GetExceptionMsg(e));
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        public async Task<UnpackedAvatarData> Debug(string cname = "昌燮")
+        {
+            var data = "";
+            if (cname.Length <= 10)
+            {
+                var ocid = await GetCharacterOCID(cname);
+                MapleStory.OpenAPI.Common.DTO.CharacterBasicDTO basic = null;
+                switch (region)
+                {
+                    case 0:
+                        basic = await API_KMS.GetCharacterBasic(ocid);
+                        break;
+                    case 1:
+                        basic = await API_MSEA.GetCharacterBasic(ocid);
+                        break;
+                    case 2:
+                        basic = await API_TMS.GetCharacterBasic(ocid);
+                        break;
+                }
+                var m = Regex.Match(basic.CharacterImage, @"look/([A-Z]+)");
+                if (m.Success)
+                    data = m.Groups[1].Value;
+            }
+            else data = cname;
+            var decrypted = Utils.Decrypt(data);
+            var version = Utils.CheckVer(decrypted);
+
+            var str = "";
+            for (int i = 0; i < decrypted.Length; i++)
+            {
+                str += Convert.ToString(decrypted[decrypted.Length - 1 - i], 2).PadLeft(8, '0');
+            }
+
+            var result = new UnpackedAvatarData(version);
+
+            Utils.Unpack(result, decrypted);
+
+            foreach (var c in result.Unpacked)
+            {
+                System.Diagnostics.Debug.Write(c.Name.PadLeft(20, ' '));
+                System.Diagnostics.Debug.Write(" ");
+                System.Diagnostics.Debug.Write(Convert.ToString(c.Value, 2).PadLeft(c.Bits, '0').PadLeft(32, ' '));
+                System.Diagnostics.Debug.Write(" ");
+                System.Diagnostics.Debug.WriteLine(c.Value.ToString().PadLeft(10, ' '));
+            }
+
+            result.SetProperties();
+
+            return result;
+        }
+    }
+
+    public static class Utils
+    {
+        public static string GetExceptionMsg(MapleStoryAPIException e, string forceMsg = "", [CallerMemberName] string funcName = "")
+        {
+            string msg;
+            if (!string.IsNullOrEmpty(forceMsg))
+            {
+                msg = forceMsg;
+            }
+            else
+            {
+                switch (e.ErrorCode)
+                {
+                    case MapleStoryAPIErrorCode.OPENAPI00001:
+                        msg = "服务器内部错误";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00002:
+                        msg = "无权限。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00003:
+                        msg = "请登录角色以更新。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00004:
+                        msg = "输入值无效。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00005:
+                        msg = "API密钥无效。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00006:
+                        msg = "无效的游戏或API路径。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00007:
+                        msg = "API调用量已超出限制。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00009:
+                        msg = "数据准备中。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00010:
+                        msg = "游戏维护中。";
+                        break;
+                    case MapleStoryAPIErrorCode.OPENAPI00011:
+                        msg = "API维护中。";
+                        break;
+                    default:
+                        msg = e.Message;
+                        break;
+                }
+            }
+
+            return $"{msg} ({e.ErrorCode.ToString()})\r\n位置: {funcName}";
+        }
+
+        public static string ToJson(this object obj)
+        {
+            return JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        }
+
+        public static string GetItemID(string text)
+        {
+            var id = "";
+            int count = 0;
+            if (!string.IsNullOrEmpty(text))
+            {
+                foreach (var c in text)
+                {
+                    var idx = CharTable[count++].IndexOf(c);
+                    id += idx >= 0 ? idx : 0;
+                }
+            }
+            return id;
+        }
+
+        // https://github.com/KENNYSOFT
+        public static byte[] Decrypt(string data)
+        {
+            if (string.IsNullOrEmpty(data)) return null;
+
+            byte[] crypt = new byte[data.Length / 2];
+            for (int i = 0; i < crypt.Length; i++)
+            {
+                crypt[i] = (byte)(data[i * 2] - 'A' << 4 | data[i * 2 + 1] - 'A');
+            }
+
+            using var aes = AES.Create();
+            aes.KeySize = 128;
+            aes.BlockSize = 128;
+
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.None;
+
+            aes.Key = aesKey;
+            aes.IV = iv;
+
+            using (ICryptoTransform decryptor = aes.CreateDecryptor())
+            {
+                return decryptor.TransformFinalBlock(crypt, 0, crypt.Length);
+            }
+        }
+
+        public static void Unpack(UnpackedAvatarData res, byte[] pack)
+        {
+            var offset = 0;
+            for (int k = 0; k < res.Unpacked.Count; k++)
+            {
+                int value = 0;
+                for (int i = 0; i < res.Unpacked[k].Bits; i++)
+                {
+                    if ((pack[(offset + i) / 8] & 1 << (offset + i) % 8) != 0)
+                    {
+                        value |= 1 << i;
+                    }
+                }
+                res.Unpacked[k].Value = value;
+                offset += res.Unpacked[k].Bits;
+
+                if (value == 1 && res.Unpacked[k].Name == "isCashWeapon")
+                {
+                    res.Unpacked.InsertRange(k + 1, new[] { new DataInfo("cashWeaponID", 10), new DataInfo("cashWeaponGender", 2) });
+                }
+                foreach (var type in new[] { "Cap", "FaceAcc", "EyeAcc", "EarAcc", "Coat", "Pants", "Shoes", "Gloves", "Cape", "Shield", "Weapon", "Skin" })
+                {
+                    if (res.Version >= 27 && value == 1 && res.Unpacked[k].Name == $"has{type}Prism")
+                    {
+                        string[] indexs;
+                        bool addOn = false;
+                        if (res.Version >= 33 && type != "Skin")
+                        {
+                            indexs = new[] { "", "2" };
+                            addOn = true;
+                        }
+                        else
+                        {
+                            indexs = new[] { "" };
+                        }
+
+                        var items = new List<DataInfo>();
+                        foreach (var index in indexs)
+                        {
+                            if (addOn)
+                            {
+                                items.Add(new DataInfo($"{type.ToLower()}Prism{index}On", 3));
+                            }
+                            items.AddRange(new[] { new DataInfo($"{type.ToLower()}Prism{index}ColorType", 3), new DataInfo($"{type.ToLower()}Prism{index}Brightness", 8), new DataInfo($"{type.ToLower()}Prism{index}Saturation", 8), new DataInfo($"{type.ToLower()}Prism{index}Hue", 9), });
+                        }
+                        res.Unpacked.InsertRange(k + 1, items);
+                    }
+                }
+                if (res.Version >= 39 && value != 0 && res.Unpacked[k].Name == $"subWeaponType")
+                {
+                    res.Unpacked.InsertRange(k + 1, new[] { new DataInfo("shieldID", 10), new DataInfo("shieldGender", 4) });
+                }
+            }
+            return;
+        }
+
+        public static int CheckVer(byte[] pack)
+        {
+            if (pack.Length <= 0) return 0;
+
+            return pack[pack.Length - pack.Length / 16 - 1];
+        }
+
+        private static readonly byte[] aesKey = {0x10, 0x04, 0x3F, 0x11,
+                                        0x17, 0xCD, 0x12, 0x15,
+                                        0x5D, 0x8E, 0x7A, 0x19,
+                                        0x80, 0x11, 0x4F, 0x14 };
+
+        private static readonly byte[] iv = {0x11, 0x17, 0xCD, 0x10,
+                                    0x04, 0x3F, 0x8E, 0x7A,
+                                    0x12, 0x15, 0x80, 0x11,
+                                    0x5D, 0x19, 0x4F, 0x10 };
+
+        public static readonly int[] WeaponsKMS = { -1, 130, 131, 132, 133, 137, 138, 140, 141, 142,
+            143, 144, 145, 146, 147, 148, 149, -1, 134, 152,
+            153, -1, 136, 121, 122, 123, 124, 156, 157, 126,
+            158, 127, 128, 159, 129, 121, 1214, 1404 };
+
+
+        // https://github.com/HikariCalyx/WzComparerR2-JMS/blob/d9f2dab7691c5f7b9989c36a40186f1b6f3a9bf7/README.md
+        private static readonly string[] CharTable = new string[]
+        {
+            "KL________",
+            "FEHGBA____",
+            "PONMLKJIHG",
+            "CDABGHEFKL",
+            "LKJIPONMDC",
+            "HGFEDCBAPO",
+            "OPMNKLIJGH",
+            "BADCFEHGJI",
+        };
+    }
+}
+#endif

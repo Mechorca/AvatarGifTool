@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Version>2.12.1</Version>
+    <AssemblyVersion>2.12.1.0</AssemblyVersion>
+    <FileVersion>2.12.1.0</FileVersion>
+    <InformationalVersion>2.12.1</InformationalVersion>
+    <VersionedPublishFileName>$(AssemblyName)_v$(Version).exe</VersionedPublishFileName>
+    <VersionedPublishFilePattern>$(AssemblyName)_v*.exe</VersionedPublishFilePattern>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WzComparerR2\WzComparerR2.csproj" />
+  </ItemGroup>
+
+  <Target Name="KeepSingleExeOnly" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true'">
+    <Copy SourceFiles="$(PublishDir)$(AssemblyName).exe" DestinationFiles="$(PublishDir)$(VersionedPublishFileName)" />
+    <ItemGroup>
+      <VersionedFilesInSubdirs Include="$(PublishDir)**/$(VersionedPublishFilePattern)" Exclude="$(PublishDir)$(VersionedPublishFilePattern)" />
+    </ItemGroup>
+    <Copy SourceFiles="@(VersionedFilesInSubdirs)"
+          DestinationFiles="@(VersionedFilesInSubdirs->'$(PublishDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(VersionedFilesInSubdirs)' != ''" />
+    <ItemGroup>
+      <FilesToDelete Include="$(PublishDir)**/*" Exclude="$(PublishDir)$(VersionedPublishFilePattern)" />
+      <DirectoriesToDelete Include="$(PublishDir)**/" Exclude="$(PublishDir)" />
+    </ItemGroup>
+    <Delete Files="@(FilesToDelete)" />
+    <RemoveDir Directories="@(DirectoriesToDelete)" />
+  </Target>
+</Project>

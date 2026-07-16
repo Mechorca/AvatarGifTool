@@ -1,0 +1,64 @@
+﻿using System;
+using System.IO;
+using WzComparerR2.Common;
+using WzComparerR2.WzLib;
+
+using Microsoft.Xna.Framework.Graphics;
+using Spine.V2;
+
+namespace WzComparerR2.Animation
+{
+    public class SpineAnimationDataV2 : ISpineAnimationData
+    {
+        private SpineAnimationDataV2()
+        {
+        }
+
+        public bool PremultipliedAlpha { get; set; }
+        public SkeletonData SkeletonData { get; private set; }
+        public Atlas Atlas { get; set; }
+
+        public static SpineAnimationDataV2 CreateFromNode(Wz_Node atlasOrSkelNode, GraphicsDevice graphicsDevice, GlobalFindNodeFunction findNode)
+        {
+            var textureLoader = new WzSpineTextureLoader(atlasOrSkelNode.ParentNode, graphicsDevice, findNode);
+            return CreateFromNode(atlasOrSkelNode, textureLoader);
+        }
+
+        public static SpineAnimationDataV2 CreateFromNode(Wz_Node atlasOrSkelNode, TextureLoader textureLoader)
+        {
+            return Create(SpineLoader.Detect(atlasOrSkelNode), textureLoader);
+        }
+
+        public static SpineAnimationDataV2 Create(SpineDetectionResult detectionResult, TextureLoader textureLoader)
+        {
+            try
+            {
+                using var atlasReader = new StringReader((string)detectionResult.ResolvedAtlasNode.Value);
+                var atlas = new Atlas(atlasReader, "", textureLoader);
+                var skeletonData = SpineLoader.LoadSkeletonV2(detectionResult, textureLoader, atlas);
+
+                if (skeletonData == null)
+                {
+                    return null;
+                }
+
+                bool pma = detectionResult.SourceNode.ParentNode.FindNodeByPath("PMA").GetValueEx<int>(0) != 0;
+
+                var anime = new SpineAnimationDataV2();
+                anime.SkeletonData = skeletonData;
+                anime.PremultipliedAlpha = pma;
+                anime.Atlas = atlas;
+                return anime;
+            }
+            catch { return null; }
+        }
+
+        #region ISpineAnimationData
+        bool ISpineAnimationData.PremultipliedAlpha => this.PremultipliedAlpha;
+        object ISpineAnimationData.SkeletonData => this.SkeletonData;
+        object ISpineAnimationData.Atlas => this.Atlas;
+        SpineVersion ISpineAnimationData.SpineVersion => SpineVersion.V2;
+        ISpineAnimator ISpineAnimationData.CreateAnimator() => new SpineAnimatorV2(this);
+        #endregion
+    }
+}

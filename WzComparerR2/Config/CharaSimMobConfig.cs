@@ -1,0 +1,32 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Configuration;
+
+namespace WzComparerR2.Config
+{
+    public class CharaSimMobConfig : ConfigurationElement
+    {
+        [ConfigurationProperty("showID", DefaultValue = true)]
+        public bool ShowID
+        {
+            get { return (bool)this["showID"]; }
+            set { this["showID"] = value; }
+        }
+
+        [ConfigurationProperty("showAllSubMobAtOnce", DefaultValue = false)]
+        public bool ShowAllSubMobAtOnce
+        {
+            get { return (bool)this["showAllSubMobAtOnce"]; }
+            set { this["showAllSubMobAtOnce"] = value; }
+        }
+
+        [ConfigurationProperty("enableMonsterBook", DefaultValue = false)]
+        public bool EnableMonsterBook
+        {
+            get { return (bool)this["enableMonsterBook"]; }
+            set { this["enableMonsterBook"] = value; }
+        }
+    }
+}

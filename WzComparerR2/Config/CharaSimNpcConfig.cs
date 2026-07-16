@@ -1,0 +1,32 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Configuration;
+
+namespace WzComparerR2.Config
+{
+    public class CharaSimNpcConfig : ConfigurationElement
+    {
+        [ConfigurationProperty("showID", DefaultValue = true)]
+        public bool ShowID
+        {
+            get { return (bool)this["showID"]; }
+            set { this["showID"] = value; }
+        }
+
+        [ConfigurationProperty("showAllIllustAtOnce", DefaultValue = false)]
+        public bool ShowAllIllustAtOnce
+        {
+            get { return (bool)this["showAllIllustAtOnce"]; }
+            set { this["showAllIllustAtOnce"] = value; }
+        }
+
+        [ConfigurationProperty("showNpcQuotes", DefaultValue = false)]
+        public bool ShowNpcQuotes
+        {
+            get { return (bool)this["showNpcQuotes"]; }
+            set { this["showNpcQuotes"] = value; }
+        }
+    }
+}

@@ -1,0 +1,332 @@
+﻿using System;
+using System.Buffers;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+
+namespace WzComparerR2.WzLib.Utilities
+{
+    public class WzBinaryReader
+    {
+        public WzBinaryReader(Stream stream, bool useStringPool)
+            : this(stream, useStringPool ? new SimpleWzStringPool() : null)
+        {
+        }
+
+        public WzBinaryReader(Stream stream, IWzStringPool stringPool)
+        {
+            this.BaseStream = stream;
+            this.bReader = new BinaryReader(this.BaseStream, System.Text.Encoding.ASCII, true);
+            this.stringPool = stringPool;
+        }
+
+        public Stream BaseStream { get; private set; }
+        public int StringReferenceOffsetBytes { get; set; }
+        private BinaryReader bReader;
+        private IWzStringPool stringPool;
+
+        public byte ReadByte()
+        {
+            return this.bReader.ReadByte();
+        }
+
+        public sbyte ReadSByte()
+        {
+            return this.bReader.ReadSByte();
+        }
+
+        public short ReadInt16()
+        {
+            return this.bReader.ReadInt16();
+        }
+
+        public ushort ReadUInt16()
+        {
+            return this.bReader.ReadUInt16();
+        }
+
+        public int ReadCompressedInt32()
+        {
+            int s = this.bReader.ReadSByte();
+            return (s == -128) ? this.bReader.ReadInt32() : s;
+        }
+
+        public int ReadInt32()
+        {
+            return this.bReader.ReadInt32();
+        }
+
+        public uint ReadUInt32()
+        {
+            return this.bReader.ReadUInt32();
+        }
+
+        public long ReadCompressedInt64()
+        {
+            int s = this.bReader.ReadSByte();
+            return (s == -128) ? this.bReader.ReadInt64() : s;
+        }
+
+        public long ReadInt64()
+        {
+            return this.bReader.ReadInt64();
+        }
+
+        public float ReadCompressedSingle()
+        {
+            float fl = this.bReader.ReadSByte();
+            return (fl == -128) ? this.bReader.ReadSingle() : fl;
+        }
+
+        public double ReadDouble()
+        {
+            return this.bReader.ReadDouble();
+        }
+
+        public char[] ReadChars(int count)
+        {
+            return this.bReader.ReadChars(count);
+        }
+
+        public string ReadString(IWzDecrypter decrypter)
+        {
+            long currentPos = this.BaseStream.Position;
+
+            int size = this.ReadSByte();
+            if (size < 0) // read ASCII/cp1252 string
+            {
+                size = (size == -128) ? this.ReadInt32() : -size;
+
+                // for net6+ we can use Stream.Read(Span<byte>) instead, the array buffer is not needed.
+                var buffer = ArrayPool<byte>.Shared.Rent(size);
+                try
+                {
+                    this.BaseStream.ReadExactly(buffer, 0, size);
+                    decrypter.Decrypt(buffer.AsSpan(0, size));
+
+                    using var charBuffer = MemoryPool<char>.Shared.Rent(size);
+                    Span<char> chars = charBuffer.Memory.Span.Slice(0, size);
+                    MathHelper.XorWidenToChar(buffer.AsSpan(0, size), chars);
+                    return this.stringPool != null ? this.stringPool.GetOrAdd(currentPos, chars) : chars.ToString();
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
+            else if (size > 0) // read UTF-16LE string
+            {
+                if (size == 127)
+                {
+                    size = this.bReader.ReadInt32();
+                }
+                int byteSize = size * 2;
+                var buffer = ArrayPool<byte>.Shared.Rent(byteSize);
+                try
+                {
+                    this.BaseStream.ReadExactly(buffer, 0, byteSize);
+                    decrypter.Decrypt(buffer.AsSpan(0, byteSize));
+
+                    Span<char> chars = MemoryMarshal.Cast<byte, char>(buffer.AsSpan(0, byteSize));
+                    MathHelper.XorChars(chars, chars);
+                    return this.stringPool != null ? this.stringPool.GetOrAdd(currentPos, chars) : chars.ToString();
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        // Introduced in KMST1198
+        public string ReadPkg2DirString(IWzDecrypter decrypter)
+        {
+            long currentPos = this.BaseStream.Position;
+
+            int size = this.ReadSByte();
+            if (size < 0)
+            {
+                size = -size;
+                int byteSize = size * 2;
+                var buffer = ArrayPool<byte>.Shared.Rent(byteSize);
+                try
+                {
+                    this.BaseStream.ReadExactly(buffer, 0, byteSize);
+                    decrypter.Decrypt(buffer.AsSpan(0, byteSize));
+                    Span<char> chars = MemoryMarshal.Cast<byte, char>(buffer.AsSpan(0, byteSize));
+                    return this.stringPool != null ? this.stringPool.GetOrAdd(currentPos, chars) : chars.ToString();
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
+            else if (size > 0)
+            {
+                throw new Exception($"Unexpected string length: {size}");
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        // temp workaround for unknown pkg2 encryption
+        public string ForceReadPkg2DirString(byte nodeType, string fullpath = null)
+        {
+            long currentPos = this.BaseStream.Position;
+
+            int size = this.ReadSByte();
+            if (size < 0)
+            {
+                size = -size;
+                int byteSize = size * 2;
+                var buffer = ArrayPool<byte>.Shared.Rent(byteSize);
+                try
+                {
+                    this.BaseStream.ReadExactly(buffer, 0, byteSize);
+                    Span<char> result = new char[size];
+                    byte keyByte = 157;
+                    if (nodeType == 0x04)
+                    {
+                        if (size > 4)
+                        {
+                            char[] code = { '.', 'i', 'm', 'g' };
+                            for (int j = 0; j < 4; j++)
+                            {
+                                if (result[size - 4 + j] != code[j])
+                                {
+                                    result[size - 4 + j] = code[j];
+                                    keyByte = (byte)(buffer[(size - 4 + j) * 2] ^ code[j]);
+                                    for (int i = size - 4 + j; i >= 0; i -= 4)
+                                    {
+                                        result[i] = (char)(buffer[i * 2] ^ keyByte);
+                                    }
+                                }
+                            }
+                        }
+                        return result.ToString();
+                    }
+                    else if (nodeType == 0x03) // dir
+                    {
+                        try
+                        {
+                            if (fullpath != null)
+                            {
+                                string dir = Path.GetDirectoryName(fullpath);
+                                List<string> cand_dir = Directory.GetDirectories(dir).Select(Path.GetFileName).ToList();
+                                string result_dir = cand_dir.FirstOrDefault(s => s.Length == size);
+                                if (!string.IsNullOrEmpty(result_dir))
+                                {
+                                    return result_dir;
+                                }
+                            }
+                        }
+                        catch { }
+
+                        switch (size)
+                        {
+                            case 7:
+                                return "_Canvas";
+                        }
+                    }
+                    return result.ToString();
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
+            else if (size > 0)
+            {
+                throw new Exception($"Unexpected string length: {size}");
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        public string ReadImageObjectTypeName(IWzDecrypter decrypter)
+        {
+            int flag = this.bReader.ReadByte();
+            switch (flag)
+            {
+                case 0x73:
+                    return this.ReadString(decrypter);
+                case 0x1B:
+                    return this.ReadStringAt(this.ReadInt32() + this.StringReferenceOffsetBytes, decrypter);
+                default:
+                    throw new Exception($"Unexpected flag '{flag}' when reading string at {this.BaseStream.Position}.");
+            }
+        }
+
+        public string ReadImageString(IWzDecrypter decrypter)
+        {
+            int flag = this.bReader.ReadByte();
+            switch (flag)
+            {
+                case 0x00:
+                    return this.ReadString(decrypter);
+                case 0x01:
+                    return this.ReadStringAt(this.ReadInt32() + this.StringReferenceOffsetBytes, decrypter);
+                case 0x04: 
+                    this.SkipBytes(8);
+                    return null;
+                default:
+                    throw new Exception($"Unexpected flag '{flag}' when reading string at {this.BaseStream.Position}.");
+            }
+        }
+
+        public string ReadStringAt(long offset, IWzDecrypter decrypter)
+        {
+            if (this.stringPool != null && this.stringPool.TryGet(offset, out string s))
+            {
+                return s;
+            }
+            long currentPos = this.BaseStream.Position;
+            this.BaseStream.Position = offset;
+            s = this.ReadString(decrypter);
+            this.BaseStream.Position = currentPos;
+            return s;
+        }
+
+        public byte[] ReadBytes(int count)
+        {
+            return this.bReader.ReadBytes(count);
+        }
+
+        public void SkipBytes(int count)
+        {
+            if (this.BaseStream.CanSeek)
+            {
+                this.BaseStream.Position += count;
+            }
+            else
+            {
+                var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(count, 16384));
+                try
+                {
+                    while (count > 0)
+                    {
+                        int actual = this.BaseStream.Read(buffer, 0, Math.Min(count, buffer.Length));
+                        if (actual == 0)
+                        {
+                            throw new EndOfStreamException();
+                        }
+                        count -= actual;
+                    }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
+        }
+    }
+}
