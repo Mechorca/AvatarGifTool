@@ -13,6 +13,12 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.13.0
+
+- 在 ID 搜索右侧新增 `仅搜索外观道具` 勾选框，默认勾选并保持原有外观搜索逻辑。
+- 取消勾选后，搜索范围扩展到全部装备与普通道具名称/ID。
+- 全道具搜索结果支持双击预览；装备继续显示装备说明，普通道具显示道具说明。
+
 ### 2.12.5
 
 - 修复双击预览搜索结果 UI 错位 BUG。

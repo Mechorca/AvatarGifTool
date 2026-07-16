@@ -1144,6 +1144,7 @@ namespace AvatarGifTool
             Face,
             Hair,
             Gear,
+            Item,
         }
 
         internal static int[] ParseIdList(string text, string fieldName)

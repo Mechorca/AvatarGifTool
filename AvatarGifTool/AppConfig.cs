@@ -15,6 +15,7 @@ namespace AvatarGifTool
         public int DyeBrightnessOffset { get; set; }
         public int BackgroundColorArgb { get; set; } = Color.White.ToArgb();
         public string BackgroundImagePath { get; set; }
+        public bool SearchAppearanceOnly { get; set; } = true;
         public List<string> NormalExportActions { get; set; } = new List<string>();
         public string DyeExportAction { get; set; }
         public List<TemplateHistoryItem> TemplateHistory { get; set; } = new List<TemplateHistoryItem>();

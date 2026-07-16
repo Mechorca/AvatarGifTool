@@ -41,6 +41,7 @@ namespace AvatarGifTool
         private readonly NumericUpDown nudDyeBrightness;
         private readonly TextBox txtPreview;
         private readonly AlignedInputBox txtSearch;
+        private readonly CheckBox chkSearchAppearanceOnly;
         private readonly Panel pnlBackgroundColor;
         private readonly Label lblBackgroundColorValue;
         private readonly Label lblBackgroundImageValue;
@@ -145,6 +146,13 @@ namespace AvatarGifTool
             {
                 Dock = DockStyle.Fill,
                 PlaceholderText = "输入中文关键字或 ID 片段",
+            };
+            this.chkSearchAppearanceOnly = new CheckBox
+            {
+                Text = "仅搜索外观道具",
+                AutoSize = true,
+                Checked = this.config.SearchAppearanceOnly,
+                Anchor = AnchorStyles.Left,
             };
             this.btnBrowseBase = new Button { Text = "选择...", AutoSize = true };
             this.btnPickBackgroundColor = new Button { Text = "调色盘...", AutoSize = true };
@@ -410,6 +418,7 @@ namespace AvatarGifTool
             this.btnNextPage.Margin = new Padding(8, 0, 0, 0);
             this.btnExportSettings.Margin = new Padding(0);
             this.btnExport.Margin = new Padding(0);
+            this.chkSearchAppearanceOnly.Margin = new Padding(12, 7, 0, 0);
 
             this.nudDyeSaturation.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudDyeSaturation.Margin = new Padding(0, 0, 10, 0);
@@ -880,15 +889,17 @@ namespace AvatarGifTool
             var searchBar = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 2,
+                ColumnCount = 3,
                 RowCount = 1,
                 AutoSize = true,
                 Margin = new Padding(0),
             };
             searchBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             searchBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            searchBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             searchBar.Controls.Add(this.txtSearch, 0, 0);
             searchBar.Controls.Add(this.btnSearch, 1, 0);
+            searchBar.Controls.Add(this.chkSearchAppearanceOnly, 2, 0);
 
             searchLayout.Controls.Add(searchBar, 0, 0);
 
@@ -999,6 +1010,7 @@ namespace AvatarGifTool
             this.btnExportSettings.Click += this.BtnExportSettings_Click;
             this.btnExport.Click += this.BtnExport_Click;
             this.btnSearch.Click += this.BtnSearch_Click;
+            this.chkSearchAppearanceOnly.CheckedChanged += this.ChkSearchAppearanceOnly_CheckedChanged;
             this.btnPrevPage.Click += this.BtnPrevPage_Click;
             this.btnNextPage.Click += this.BtnNextPage_Click;
             this.btnJumpPage.Click += this.BtnJumpPage_Click;
@@ -1540,8 +1552,9 @@ namespace AvatarGifTool
                 this.lblStatus.Text = "正在搜索...";
 
                 string baseWzPath = this.txtBaseWz.Text.Trim();
+                bool appearanceOnly = this.chkSearchAppearanceOnly.Checked;
                 List<AppearanceSearchResult> results = await Task.Run(() =>
-                    this.metadataResolver.Search(baseWzPath, query));
+                    this.metadataResolver.Search(baseWzPath, query, appearanceOnly));
 
                 this.searchResults = results;
                 this.currentSearchPage = 0;
@@ -1559,6 +1572,12 @@ namespace AvatarGifTool
                 this.isSearching = false;
                 this.UpdateSearchNavigationState();
             }
+        }
+
+        private void ChkSearchAppearanceOnly_CheckedChanged(object sender, EventArgs e)
+        {
+            this.config.SearchAppearanceOnly = this.chkSearchAppearanceOnly.Checked;
+            this.SaveConfig();
         }
 
         private void TxtSearch_KeyDown(object sender, KeyEventArgs e)
@@ -1659,12 +1678,22 @@ namespace AvatarGifTool
                         return;
                     }
                 }
+                else if (result.Kind == Program.AppearanceIdKind.Item)
+                {
+                    Item item = await Task.Run(() =>
+                        this.metadataResolver.LoadTooltipItem(this.txtBaseWz.Text.Trim(), result));
+                    if (item != null)
+                    {
+                        this.ShowOriginalTooltip(result, item);
+                        return;
+                    }
+                }
 
                 SearchPreviewImage previewImage = await Task.Run(() =>
                     this.metadataResolver.LoadPreviewImage(this.txtBaseWz.Text.Trim(), result));
                 if (previewImage?.Bitmap == null)
                 {
-                    MessageBox.Show(this, "该外观没有可用的预览。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(this, "该结果没有可用的预览。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
@@ -1685,9 +1714,15 @@ namespace AvatarGifTool
             }
         }
 
-        private void ShowOriginalTooltip(AppearanceSearchResult result, Gear gear)
+        private void ShowOriginalTooltip(AppearanceSearchResult result, object targetItem)
         {
             this.CloseSearchPreviewTooltip();
+            int itemId = targetItem switch
+            {
+                Gear gear => gear.ItemID,
+                Item item => item.ItemID,
+                _ => result.Id,
+            };
 
             using var dpiScope = DpiAwarenessScope.EnterReferencePreviewMode();
             var tooltip = (AfrmTooltip)null;
@@ -1698,9 +1733,9 @@ namespace AvatarGifTool
                     Visible = false,
                     HideOnHover = false,
                     ShowMenu = true,
-                    TargetItem = gear,
-                    NodeID = gear.ItemID,
-                    ImageFileName = $"{gear.ItemID}.png",
+                    TargetItem = targetItem,
+                    NodeID = itemId,
+                    ImageFileName = $"{itemId}.png",
                 };
 
                 this.metadataResolver.ConfigureTooltip(tooltip);
@@ -1751,7 +1786,8 @@ namespace AvatarGifTool
 
         private void CmsSearchResults_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            bool canAdd = this.TryGetSelectedSearchResult(out _);
+            bool canAdd = this.TryGetSelectedSearchResult(out AppearanceSearchResult result)
+                && CanAddSearchResultToTemplate(result);
             this.miAddSearchResultToTemplate.Enabled = canAdd;
             e.Cancel = !canAdd;
         }
@@ -1759,6 +1795,11 @@ namespace AvatarGifTool
         private void MiAddSearchResultToTemplate_Click(object sender, EventArgs e)
         {
             if (!this.TryGetSelectedSearchResult(out AppearanceSearchResult result))
+            {
+                return;
+            }
+
+            if (!CanAddSearchResultToTemplate(result))
             {
                 return;
             }
@@ -1783,6 +1824,14 @@ namespace AvatarGifTool
 
             result = this.lvSearchResults.SelectedItems[0].Tag as AppearanceSearchResult;
             return result != null;
+        }
+
+        private static bool CanAddSearchResultToTemplate(AppearanceSearchResult result)
+        {
+            return result?.Kind == Program.AppearanceIdKind.Skin
+                || result?.Kind == Program.AppearanceIdKind.Face
+                || result?.Kind == Program.AppearanceIdKind.Hair
+                || result?.Kind == Program.AppearanceIdKind.Gear;
         }
 
         private bool AppendIdToTemplate(int id)
@@ -2167,6 +2216,7 @@ namespace AvatarGifTool
             this.btnExport.Enabled = controlsEnabled && baseReady;
             this.txtSearch.Enabled = controlsEnabled && baseReady;
             this.btnSearch.Enabled = controlsEnabled && baseReady;
+            this.chkSearchAppearanceOnly.Enabled = controlsEnabled && baseReady;
             this.btnPrevPage.Enabled = controlsEnabled && baseReady && this.currentSearchPage > 0;
             this.btnNextPage.Enabled = controlsEnabled && baseReady && this.currentSearchPage + 1 < pageCount;
             this.btnJumpPage.Enabled = controlsEnabled && baseReady && hasSearchPages;
@@ -2227,6 +2277,7 @@ namespace AvatarGifTool
             this.config.DyeBrightnessOffset = this.ClampAdjustmentValue(this.trkDyeBrightness.Value);
             this.config.BackgroundColorArgb = this.currentBackgroundColor.ToArgb();
             this.config.BackgroundImagePath = this.currentBackgroundImagePath;
+            this.config.SearchAppearanceOnly = this.chkSearchAppearanceOnly.Checked;
             this.config.NormalExportActions = this.SelectedNormalExportActions.ToList();
             this.config.DyeExportAction = this.SelectedDyeExportAction;
 
@@ -2339,6 +2390,7 @@ namespace AvatarGifTool
         private readonly Dictionary<int, Program.AppearanceIdKind> idKindCache = new Dictionary<int, Program.AppearanceIdKind>();
         private List<AppearanceSearchResult> searchIndex;
         private Dictionary<int, AppearanceSearchResult> searchIndexById;
+        private List<AppearanceSearchResult> allItemSearchIndex;
 
         public void LoadBase(string baseWzPath)
         {
@@ -2519,7 +2571,7 @@ namespace AvatarGifTool
             return true;
         }
 
-        public List<AppearanceSearchResult> Search(string baseWzPath, string query)
+        public List<AppearanceSearchResult> Search(string baseWzPath, string query, bool appearanceOnly)
         {
             this.EnsureLoaded(baseWzPath);
 
@@ -2532,8 +2584,12 @@ namespace AvatarGifTool
             string[] tokens = trimmedQuery
                 .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
 
+            IReadOnlyList<AppearanceSearchResult> source = appearanceOnly
+                ? this.searchIndex
+                : this.EnsureAllItemSearchIndex();
+
             var results = new List<AppearanceSearchResult>();
-            foreach (AppearanceSearchResult result in this.searchIndex)
+            foreach (AppearanceSearchResult result in source)
             {
                 if (!MatchesSearch(result.Id.ToString(), result.Name, result.KindLabel, GetSearchAlias(result), tokens))
                 {
@@ -2546,11 +2602,18 @@ namespace AvatarGifTool
             return results;
         }
 
-        public Bitmap LoadIcon(string baseWzPath, int id)
+        public Bitmap LoadIcon(string baseWzPath, AppearanceSearchResult result)
         {
             this.EnsureLoaded(baseWzPath);
 
-            Wz_Node iconNode = Program.FindAppearanceIconNode(id);
+            if (result == null)
+            {
+                return null;
+            }
+
+            Wz_Node iconNode = result.Kind == Program.AppearanceIdKind.Item
+                ? this.FindItemIconNode(result.Id)
+                : Program.FindAppearanceIconNode(result.Id);
             if (iconNode == null)
             {
                 return null;
@@ -2575,7 +2638,7 @@ namespace AvatarGifTool
                 return new SearchPreviewImage(tooltipBitmap, true);
             }
 
-            Bitmap iconBitmap = this.LoadIcon(baseWzPath, result.Id);
+            Bitmap iconBitmap = this.LoadIcon(baseWzPath, result);
             return iconBitmap == null ? null : new SearchPreviewImage(iconBitmap, false);
         }
 
@@ -2601,6 +2664,33 @@ namespace AvatarGifTool
             catch (Exception ex)
             {
                 ErrorLog.Write(ex, $"MetadataResolver.LoadTooltipGear({result.Id})");
+                return null;
+            }
+        }
+
+        public Item LoadTooltipItem(string baseWzPath, AppearanceSearchResult result)
+        {
+            this.EnsureLoaded(baseWzPath);
+
+            if (result == null || result.Kind != Program.AppearanceIdKind.Item)
+            {
+                return null;
+            }
+
+            Wz_Node node = this.FindItemNode(result.Id);
+            if (node == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                PrepareItemTooltipData(result.Id);
+                return Item.CreateFromNode(node, PluginManager.FindWz);
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write(ex, $"MetadataResolver.LoadTooltipItem({result.Id})");
                 return null;
             }
         }
@@ -2631,6 +2721,16 @@ namespace AvatarGifTool
             tooltip.GearRender22.ShowCosmetic = settings.ShowCosmetic;
             tooltip.GearRender22.ShowCashPurchasePrice = settings.ShowCashPurchasePrice;
 
+            tooltip.ItemRender.ShowObjectID = settings.ShowObjectId;
+            tooltip.ItemRender.ShowLevelOrSealed = settings.ShowLevelOrSealed;
+            tooltip.ItemRender.Enable22AniStyle = settings.Use22Style;
+            tooltip.ItemRender.ShowCashPurchasePrice = settings.ShowCashPurchasePrice;
+
+            tooltip.ItemRender3.ShowObjectID = settings.ShowObjectId;
+            tooltip.ItemRender3.ShowLevelOrSealed = settings.ShowLevelOrSealed;
+            tooltip.ItemRender3.ShowCashPurchasePrice = settings.ShowCashPurchasePrice;
+
+            tooltip.Enable22AniStyle = settings.Use22Style;
             GearGraphics.is22aniStyle = settings.Use22Style;
         }
 
@@ -2641,6 +2741,7 @@ namespace AvatarGifTool
             this.idKindCache.Clear();
             this.searchIndex = null;
             this.searchIndexById = null;
+            this.allItemSearchIndex = null;
             this.wzContext?.Dispose();
             this.wzContext = null;
         }
@@ -2716,6 +2817,9 @@ namespace AvatarGifTool
                 case Program.AppearanceIdKind.Gear:
                     return this.ResolveAppearanceName(id, id.ToString());
 
+                case Program.AppearanceIdKind.Item:
+                    return this.ResolveAppearanceName(id, id.ToString());
+
                 default:
                     return id.ToString();
             }
@@ -2741,6 +2845,63 @@ namespace AvatarGifTool
                 .OrderBy(result => result.Id)
                 .ToList();
             this.searchIndexById = this.searchIndex.ToDictionary(result => result.Id, result => result);
+            this.allItemSearchIndex = null;
+        }
+
+        private IReadOnlyList<AppearanceSearchResult> EnsureAllItemSearchIndex()
+        {
+            if (this.allItemSearchIndex != null)
+            {
+                return this.allItemSearchIndex;
+            }
+
+            var entries = new Dictionary<int, AppearanceSearchResult>();
+            if (this.searchIndex != null)
+            {
+                foreach (AppearanceSearchResult result in this.searchIndex)
+                {
+                    entries[result.Id] = result;
+                }
+            }
+
+            if (this.stringLinker?.StringEqp != null)
+            {
+                foreach (KeyValuePair<int, StringResult> pair in this.stringLinker.StringEqp)
+                {
+                    if (entries.ContainsKey(pair.Key))
+                    {
+                        continue;
+                    }
+
+                    entries[pair.Key] = new AppearanceSearchResult(
+                        pair.Key,
+                        GetStringResultName(pair.Value, pair.Key),
+                        Program.AppearanceIdKind.Gear,
+                        this.GetKindLabel(pair.Key, Program.AppearanceIdKind.Gear));
+                }
+            }
+
+            if (this.stringLinker?.StringItem != null)
+            {
+                foreach (KeyValuePair<int, StringResult> pair in this.stringLinker.StringItem)
+                {
+                    if (entries.ContainsKey(pair.Key))
+                    {
+                        continue;
+                    }
+
+                    entries[pair.Key] = new AppearanceSearchResult(
+                        pair.Key,
+                        GetStringResultName(pair.Value, pair.Key),
+                        Program.AppearanceIdKind.Item,
+                        GetItemKindLabel(pair.Key));
+                }
+            }
+
+            this.allItemSearchIndex = entries.Values
+                .OrderBy(result => result.Id)
+                .ToList();
+            return this.allItemSearchIndex;
         }
 
         private AppearanceSearchResult CreateSearchResult(int id, Program.AppearanceIdKind kind)
@@ -2924,8 +3085,45 @@ namespace AvatarGifTool
                 case Program.AppearanceIdKind.Gear:
                     return Program.GetAppearanceSlotLabel(id);
 
+                case Program.AppearanceIdKind.Item:
+                    return GetItemKindLabel(id);
+
                 default:
                     return "外观";
+            }
+        }
+
+        private static string GetStringResultName(StringResult sr, int id)
+        {
+            return string.IsNullOrWhiteSpace(sr?.Name) ? id.ToString() : sr.Name;
+        }
+
+        private static string GetItemKindLabel(int id)
+        {
+            if (id / 10000 == 910)
+            {
+                return "特殊";
+            }
+
+            switch (Item.GetItemType(id))
+            {
+                case Item.ItemType.Consume:
+                    return "消耗";
+
+                case Item.ItemType.Install:
+                    return "装饰";
+
+                case Item.ItemType.Etc:
+                    return "其它";
+
+                case Item.ItemType.Pet:
+                    return "宠物";
+
+                case Item.ItemType.Cash:
+                    return "现金";
+
+                default:
+                    return "道具";
             }
         }
 
@@ -3112,6 +3310,131 @@ namespace AvatarGifTool
             }
         }
 
+        private Wz_Node FindItemNode(int id)
+        {
+            foreach (string path in EnumerateItemNodePaths(id))
+            {
+                Wz_Node node = EnsureExtractedNode(PluginManager.FindWz(path));
+                if (node != null)
+                {
+                    return node;
+                }
+            }
+
+            return null;
+        }
+
+        private Wz_Node FindItemIconNode(int id)
+        {
+            Wz_Node node = this.FindItemNode(id);
+            return node?.FindNodeByPath("info/icon") ?? node?.FindNodeByPath("info/iconRaw");
+        }
+
+        private static IEnumerable<string> EnumerateItemNodePaths(int id)
+        {
+            var paths = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void Add(string path)
+            {
+                if (!string.IsNullOrWhiteSpace(path) && seen.Add(path))
+                {
+                    paths.Add(path);
+                }
+            }
+
+            Item.ItemType type = Item.GetItemType(id);
+            if (type == Item.ItemType.Pet)
+            {
+                Add($@"Item\Pet\{id:D7}.img");
+                Add($@"Item\Pet\{id}.img");
+            }
+            else if (type != Item.ItemType.Unknown)
+            {
+                string typeName = type.ToString();
+                foreach (string nodePath in EnumerateRegularItemNodePaths(id))
+                {
+                    Add($@"Item\{typeName}\{nodePath}");
+                }
+            }
+
+            Add($@"Item\Special\{id / 10000:D4}.img\{id}");
+            Add($@"Item\Special\{id / 10000:D4}.img\{id:D8}");
+
+            return paths;
+        }
+
+        private static IEnumerable<string> EnumerateRegularItemNodePaths(int id)
+        {
+            var paths = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void Add(string path)
+            {
+                if (!string.IsNullOrWhiteSpace(path) && seen.Add(path))
+                {
+                    paths.Add(path);
+                }
+            }
+
+            if (id / 1000 == 3015)
+            {
+                Add($@"{id / 100:D6}.img\{id:D8}");
+                Add($@"{id / 100:D6}.img\{id}");
+            }
+            else if (id / 10000 == 301)
+            {
+                Add($@"{id / 1000:D5}.img\{id:D8}");
+                Add($@"{id / 1000:D5}.img\{id}");
+            }
+            else
+            {
+                Add($@"{id / 10000:D4}.img\{id:D8}");
+                Add($@"{id / 10000:D4}.img\{id}");
+            }
+
+            return paths;
+        }
+
+        private static Wz_Node EnsureExtractedNode(Wz_Node node)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            Wz_Image image = node.GetValueEx<Wz_Image>(null);
+            if (image != null)
+            {
+                return image.TryExtract() ? image.Node : null;
+            }
+
+            return node;
+        }
+
+        private static void PrepareItemTooltipData(int id)
+        {
+            CharaSimLoader.LoadCommoditiesIfEmpty();
+            CharaSimLoader.LoadMsnMintableItemListIfEmpty();
+
+            if (Item.GetItemType(id) == Item.ItemType.Pet)
+            {
+                CharaSimLoader.LoadSetItemsIfEmpty();
+            }
+
+            try
+            {
+                if (CharaSimConfig.Default?.Misc?.LocatePetEquip == true)
+                {
+                    CharaSimLoader.LoadPetEquipInfoIfEmpty();
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write(ex, "MetadataResolver.PrepareItemTooltipData");
+            }
+        }
+
         private static bool MatchesSearch(string idText, string name, string kindLabel, string alias, string[] tokens)
         {
             if (tokens == null || tokens.Length == 0)
@@ -3147,6 +3470,7 @@ namespace AvatarGifTool
                 Program.AppearanceIdKind.Face => "脸 脸型 表情",
                 Program.AppearanceIdKind.Hair => "头发 发型",
                 Program.AppearanceIdKind.Gear => "装备 外观 道具",
+                Program.AppearanceIdKind.Item => "道具 物品 消耗 装饰 其它 其他 现金 宠物 特殊",
                 _ => string.Empty,
             };
 
