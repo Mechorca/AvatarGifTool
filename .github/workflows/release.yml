@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -56,13 +56,13 @@ jobs:
         id: publish
         shell: pwsh
         run: |
-          dotnet publish AvatarGifTool\AvatarGifTool.csproj `
+          dotnet publish AvatarGifTool/AvatarGifTool.csproj `
             -c Release -r win-x64 `
             -p:PublishSingleFile=true `
             -p:SelfContained=true `
             -p:EnableWindowsTargeting=true `
             -p:Platform=x64 `
-            -o AvatarGifTool\dist
+            -o AvatarGifTool/dist
 
           $version = "${{ steps.version.outputs.version }}"
           $asset = Get-ChildItem "AvatarGifTool/dist" -Filter "AvatarGifTool_v$version.exe" | Select-Object -First 1
