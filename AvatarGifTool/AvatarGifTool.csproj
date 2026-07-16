@@ -10,10 +10,10 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>2.12.1</Version>
-    <AssemblyVersion>2.12.1.0</AssemblyVersion>
-    <FileVersion>2.12.1.0</FileVersion>
-    <InformationalVersion>2.12.1</InformationalVersion>
+    <Version>2.12.5</Version>
+    <AssemblyVersion>2.12.5.0</AssemblyVersion>
+    <FileVersion>2.12.5.0</FileVersion>
+    <InformationalVersion>2.12.5</InformationalVersion>
     <VersionedPublishFileName>$(AssemblyName)_v$(Version).exe</VersionedPublishFileName>
     <VersionedPublishFilePattern>$(AssemblyName)_v*.exe</VersionedPublishFilePattern>
   </PropertyGroup>

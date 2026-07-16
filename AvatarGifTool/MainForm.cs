@@ -1668,8 +1668,11 @@ namespace AvatarGifTool
                     return;
                 }
 
-                using var form = new PreviewImageForm(result, previewImage);
-                form.ShowDialog(this);
+                using (DpiAwarenessScope.EnterReferencePreviewMode())
+                using (var form = new PreviewImageForm(result, previewImage))
+                {
+                    form.ShowDialog(this);
+                }
             }
             catch (Exception ex)
             {
@@ -1686,39 +1689,48 @@ namespace AvatarGifTool
         {
             this.CloseSearchPreviewTooltip();
 
-            var tooltip = new AfrmTooltip
+            using var dpiScope = DpiAwarenessScope.EnterReferencePreviewMode();
+            var tooltip = (AfrmTooltip)null;
+            try
             {
-                Visible = false,
-                HideOnHover = false,
-                ShowMenu = true,
-                TargetItem = gear,
-                NodeID = gear.ItemID,
-                ImageFileName = $"{gear.ItemID}.png",
-            };
+                tooltip = new AfrmTooltip
+                {
+                    Visible = false,
+                    HideOnHover = false,
+                    ShowMenu = true,
+                    TargetItem = gear,
+                    NodeID = gear.ItemID,
+                    ImageFileName = $"{gear.ItemID}.png",
+                };
 
-            this.metadataResolver.ConfigureTooltip(tooltip);
-            tooltip.KeyPreview = true;
-            tooltip.KeyDown += this.SearchPreviewTooltip_KeyDown;
-            tooltip.FormClosed += this.SearchPreviewTooltip_FormClosed;
-            tooltip.Refresh();
+                this.metadataResolver.ConfigureTooltip(tooltip);
+                tooltip.KeyPreview = true;
+                tooltip.KeyDown += this.SearchPreviewTooltip_KeyDown;
+                tooltip.FormClosed += this.SearchPreviewTooltip_FormClosed;
+                tooltip.Refresh();
 
-            if (tooltip.Bitmap == null)
-            {
-                tooltip.Dispose();
-                throw new InvalidOperationException($"无法生成 {result.Id} 的道具说明预览。");
+                if (tooltip.Bitmap == null)
+                {
+                    throw new InvalidOperationException($"无法生成 {result.Id} 的道具说明预览。");
+                }
+
+                Rectangle workingArea = Screen.FromControl(this).WorkingArea;
+                int x = workingArea.Left + Math.Max(0, (workingArea.Width - tooltip.Bitmap.Width) / 2);
+                int y = workingArea.Top + Math.Max(0, (workingArea.Height - tooltip.Bitmap.Height) / 2);
+                tooltip.Location = new Point(
+                    Math.Max(workingArea.Left, Math.Min(x, workingArea.Right - tooltip.Bitmap.Width)),
+                    Math.Max(workingArea.Top, Math.Min(y, workingArea.Bottom - tooltip.Bitmap.Height)));
+
+                tooltip.QuickRefresh();
+                tooltip.Show(this);
+                tooltip.BringToFront();
+                this.searchPreviewTooltip = tooltip;
+                tooltip = null;
             }
-
-            Rectangle workingArea = Screen.FromControl(this).WorkingArea;
-            int x = workingArea.Left + Math.Max(0, (workingArea.Width - tooltip.Bitmap.Width) / 2);
-            int y = workingArea.Top + Math.Max(0, (workingArea.Height - tooltip.Bitmap.Height) / 2);
-            tooltip.Location = new Point(
-                Math.Max(workingArea.Left, Math.Min(x, workingArea.Right - tooltip.Bitmap.Width)),
-                Math.Max(workingArea.Top, Math.Min(y, workingArea.Bottom - tooltip.Bitmap.Height)));
-
-            tooltip.QuickRefresh();
-            tooltip.Show(this);
-            tooltip.BringToFront();
-            this.searchPreviewTooltip = tooltip;
+            finally
+            {
+                tooltip?.Dispose();
+            }
         }
 
         private void LvSearchResults_MouseDown(object sender, MouseEventArgs e)
@@ -3894,6 +3906,7 @@ namespace AvatarGifTool
         public PreviewImageForm(AppearanceSearchResult result, SearchPreviewImage previewImage)
         {
             this.Text = $"{result.Name} ({result.Id})";
+            this.AutoScaleMode = AutoScaleMode.None;
             this.StartPosition = FormStartPosition.CenterParent;
             this.FormBorderStyle = FormBorderStyle.SizableToolWindow;
             this.KeyPreview = true;
@@ -3970,4 +3983,49 @@ namespace AvatarGifTool
             base.OnFormClosed(e);
         }
     }
+
+    internal sealed class DpiAwarenessScope : IDisposable
+    {
+        private static readonly IntPtr DpiAwarenessContextUnaware = new IntPtr(-1);
+        private static readonly IntPtr DpiAwarenessContextUnawareGdiScaled = new IntPtr(-5);
+        private readonly IntPtr previousContext;
+        private bool disposed;
+
+        private DpiAwarenessScope(IntPtr previousContext)
+        {
+            this.previousContext = previousContext;
+        }
+
+        public static DpiAwarenessScope EnterReferencePreviewMode()
+        {
+            IntPtr previous = SetThreadDpiAwarenessContext(DpiAwarenessContextUnawareGdiScaled);
+            if (previous == IntPtr.Zero)
+            {
+                previous = SetThreadDpiAwarenessContext(DpiAwarenessContextUnaware);
+            }
+
+            return previous == IntPtr.Zero
+                ? new DpiAwarenessScope(IntPtr.Zero)
+                : new DpiAwarenessScope(previous);
+        }
+
+        public void Dispose()
+        {
+            if (this.disposed)
+            {
+                return;
+            }
+
+            if (this.previousContext != IntPtr.Zero)
+            {
+                SetThreadDpiAwarenessContext(this.previousContext);
+            }
+
+            this.disposed = true;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+    }
+
 }

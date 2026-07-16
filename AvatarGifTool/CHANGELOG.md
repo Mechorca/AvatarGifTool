@@ -13,6 +13,11 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.12.5
+
+- 修复双击预览搜索结果 UI 错位 BUG。
+- 双击搜索结果预览现在临时使用接近参考项目的 DPI 兼容缩放上下文，避免在 2K/4K 或高缩放屏幕上出现预览窗口尺寸异常、内容错位或过小的问题。
+
 ### 2.12.0
 
 - Replaced the single `导出` action row with side-by-side `导出设置` and `导出` buttons using the same button size.
