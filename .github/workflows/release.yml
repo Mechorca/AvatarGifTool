@@ -52,6 +52,14 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
+      - name: Build updater resources
+        shell: pwsh
+        run: |
+          dotnet build WzComparerR2.Updater/WzComparerR2.Updater.csproj `
+            -c Release -f net8.0-windows -r win-x64 `
+            -p:EnableWindowsTargeting=true `
+            -p:AppendRuntimeIdentifierToOutputPath=false
+
       - name: Publish single exe
         id: publish
         shell: pwsh
