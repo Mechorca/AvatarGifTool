@@ -27,6 +27,7 @@ namespace AvatarGifTool
         private const int PreferredWindowHeight = 860;
         private const int ParamsGearRowIndex = 3;
         private const int ParamsDyeRowIndex = 4;
+        private const string DefaultTemplateText = "53065,64460,12015";
         private readonly TextBox txtBaseWz;
         private readonly AlignedInputBox txtTemplate;
         private readonly ComboBox cboMode;
@@ -121,6 +122,7 @@ namespace AvatarGifTool
             {
                 Dock = DockStyle.Fill,
                 PlaceholderText = "在此填入外观/物品ID，使用英文逗号隔开",
+                Text = DefaultTemplateText,
             };
             this.cboMode = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
             this.cboMode.Items.AddRange(new object[] { "普通模式", "染色模式" });
@@ -259,6 +261,12 @@ namespace AvatarGifTool
             }
         }
 
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            this.BeginInvoke(new Action(this.ClearInitialTemplateSelection));
+        }
+
         protected override void OnSizeChanged(EventArgs e)
         {
             base.OnSizeChanged(e);
@@ -301,6 +309,25 @@ namespace AvatarGifTool
         private IReadOnlyList<string> SelectedNormalExportActions => Program.NormalizeNormalActionSelection(this.normalExportActions);
 
         private string SelectedDyeExportAction => Program.NormalizeDyeActionSelection(this.dyeExportAction);
+
+        private void ClearInitialTemplateSelection()
+        {
+            if (!string.Equals(this.txtTemplate.Text, DefaultTemplateText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            this.txtTemplate.SelectionStart = 0;
+            this.txtTemplate.SelectionLength = 0;
+            if (this.btnBrowseBase.Enabled)
+            {
+                this.ActiveControl = this.btnBrowseBase;
+                if (this.btnBrowseBase.CanFocus)
+                {
+                    this.btnBrowseBase.Focus();
+                }
+            }
+        }
 
         private TrackBar CreateAdjustmentTrackBar()
         {

@@ -13,6 +13,23 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.16.0
+
+- 默认模板预设改为 `53065,64460,12015`。
+
+### 2.15.1
+
+- 修复启动时默认模板文本被自动选中高亮的问题。
+
+### 2.15.0
+
+- 模板输入框默认填入 `萌兔附体脸型,黑色乖巧萝莉发型,松软花瓣皮肤`，方便启动后直接校验或导出默认角色模板。
+
+### 2.14.0
+
+- 染色模式 GIF 在原有 3 列色相预览右侧新增第 4 列极值预览。
+- 新增极值格依次为：饱和度 -99 / 亮度 -99、饱和度 -99 / 亮度 99、饱和度 99 / 亮度 -99、饱和度 99 / 亮度 99。
+
 ### 2.13.0
 
 - 在 ID 搜索右侧新增 `仅搜索外观道具` 勾选框，默认勾选并保持原有外观搜索逻辑。

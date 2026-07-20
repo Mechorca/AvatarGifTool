@@ -31,6 +31,14 @@ namespace AvatarGifTool
             "jump",
             "walk1",
         };
+        private const int DyeHueColumnCount = 3;
+        private static readonly (int SaturationOffset, int BrightnessOffset, string Key)[] DyeExtremeAdjustmentVariants = new[]
+        {
+            (-99, -99, "sat-99_bri-99"),
+            (-99, 99, "sat-99_bri+99"),
+            (99, -99, "sat+99_bri-99"),
+            (99, 99, "sat+99_bri+99"),
+        };
 
         internal static IReadOnlyList<string> SupportedExportActions => ActionStripActions;
 
@@ -205,12 +213,34 @@ namespace AvatarGifTool
             string emotion = avatar.GetStandardEmotion();
             string dyeAction = NormalizeDyeActionSelection(options.DyeAction);
             var tracks = new List<RenderTrack>();
+            int hueIndex = 0;
 
             for (int hue = 0; hue < 360; hue += options.HueStep)
             {
                 ApplyPrism(targetParts, options.PrismType, hue, ClampPrismValue(100 + options.SaturationOffset), ClampPrismValue(100 + options.BrightnessOffset));
                 avatar.ClearSkinCache();
-                tracks.Add(RenderSingleTrack(avatar, dyeAction, emotion, $"h{hue:000}"));
+                RenderTrack track = RenderSingleTrack(avatar, dyeAction, emotion, $"h{hue:000}");
+                track.GridRow = hueIndex / DyeHueColumnCount;
+                track.GridColumn = hueIndex % DyeHueColumnCount;
+                tracks.Add(track);
+                hueIndex++;
+            }
+
+            for (int i = 0; i < DyeExtremeAdjustmentVariants.Length; i++)
+            {
+                var variant = DyeExtremeAdjustmentVariants[i];
+                ApplyPrism(
+                    targetParts,
+                    options.PrismType,
+                    0,
+                    ClampPrismValue(100 + variant.SaturationOffset),
+                    ClampPrismValue(100 + variant.BrightnessOffset));
+                avatar.ClearSkinCache();
+
+                RenderTrack track = RenderSingleTrack(avatar, dyeAction, emotion, variant.Key);
+                track.GridRow = i;
+                track.GridColumn = DyeHueColumnCount;
+                tracks.Add(track);
             }
 
             ApplyPrism(targetParts, options.PrismType, 0, 100, 100);
@@ -453,8 +483,13 @@ namespace AvatarGifTool
                 throw new InvalidOperationException("No frames were produced.");
             }
 
-            int columns = GetGridColumnCount(tracks.Count, options.Mode);
-            int rows = (int)Math.Ceiling(tracks.Count / (double)columns);
+            bool useExplicitGrid = tracks.Any(track => track.GridRow.HasValue || track.GridColumn.HasValue);
+            int columns = useExplicitGrid
+                ? tracks.Max(track => track.GridColumn.GetValueOrDefault()) + 1
+                : GetGridColumnCount(tracks.Count, options.Mode);
+            int rows = useExplicitGrid
+                ? tracks.Max(track => track.GridRow.GetValueOrDefault()) + 1
+                : (int)Math.Ceiling(tracks.Count / (double)columns);
             int cellWidth = tracks.Max(track => track.Bounds.Width);
             int cellHeight = tracks.Max(track => track.Bounds.Height);
 
@@ -484,8 +519,12 @@ namespace AvatarGifTool
 
                     for (int trackIndex = 0; trackIndex < tracks.Count; trackIndex++)
                     {
-                        int row = trackIndex / columns;
-                        int column = trackIndex % columns;
+                        int row = useExplicitGrid
+                            ? tracks[trackIndex].GridRow.GetValueOrDefault()
+                            : trackIndex / columns;
+                        int column = useExplicitGrid
+                            ? tracks[trackIndex].GridColumn.GetValueOrDefault()
+                            : trackIndex % columns;
                         DrawTrackFrame(
                             graphics,
                             tracks[trackIndex],
@@ -686,7 +725,7 @@ namespace AvatarGifTool
                 "",
                 "Notes:",
                 "  normal mode defaults to stand1, swingO1, swingO2, shoot1, jump, walk1 and auto-arranges near square.",
-                "  dye mode defaults to stand1, gear is required, hue 0..330 with step 30 by default, arranged as 3 columns.",
+                "  dye mode defaults to stand1, gear is required, hue 0..330 with step 30 by default, arranged as 3 hue columns plus one saturation/brightness extreme column.",
             });
         }
 
@@ -2086,6 +2125,8 @@ namespace AvatarGifTool
             public string Key { get; set; }
             public Rectangle Bounds { get; set; }
             public List<RenderFrame> Frames { get; set; }
+            public int? GridRow { get; set; }
+            public int? GridColumn { get; set; }
 
             public int TotalDuration => this.Frames.Sum(frame => frame.Delay);
 
