@@ -13,6 +13,16 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.17.0
+
+- ID 搜索结果新增 `道具说明` 列。
+- 搜索栏新增 `搜索道具名 / 搜索道具说明` 选择框，默认搜索道具名，选择说明时会在道具说明中匹配关键字。
+
+### 2.16.1
+
+- 修复配置文件设为隐藏后可能无法再次覆盖保存，导致历史搭配退出程序后丢失的问题。
+- 配置读写失败时会写入 `error.log`，便于定位权限或文件占用问题。
+
 ### 2.16.0
 
 - 默认模板预设改为 `53065,64460,12015`。

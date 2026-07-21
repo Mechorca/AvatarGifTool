@@ -16,6 +16,7 @@ namespace AvatarGifTool
         public int BackgroundColorArgb { get; set; } = Color.White.ToArgb();
         public string BackgroundImagePath { get; set; }
         public bool SearchAppearanceOnly { get; set; } = true;
+        public string SearchTarget { get; set; } = "name";
         public List<string> NormalExportActions { get; set; } = new List<string>();
         public string DyeExportAction { get; set; }
         public List<TemplateHistoryItem> TemplateHistory { get; set; } = new List<TemplateHistoryItem>();
@@ -60,8 +61,9 @@ namespace AvatarGifTool
                 this.TryMarkHidden();
                 return JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
             }
-            catch
+            catch (Exception ex)
             {
+                ErrorLog.Write(new InvalidDataException($"Unable to load config file: {this.configPath}", ex), "AppConfigStore.Load");
                 return new AppConfig();
             }
         }
@@ -74,11 +76,40 @@ namespace AvatarGifTool
                 {
                     WriteIndented = true,
                 });
+                string directory = Path.GetDirectoryName(this.configPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                this.TryClearHidden();
                 File.WriteAllText(this.configPath, json);
                 this.TryMarkHidden();
             }
-            catch
+            catch (Exception ex)
             {
+                ErrorLog.Write(ex, "AppConfigStore.Save");
+            }
+        }
+
+        private void TryClearHidden()
+        {
+            try
+            {
+                if (!OperatingSystem.IsWindows() || !File.Exists(this.configPath))
+                {
+                    return;
+                }
+
+                FileAttributes attributes = File.GetAttributes(this.configPath);
+                if ((attributes & FileAttributes.Hidden) != 0)
+                {
+                    File.SetAttributes(this.configPath, attributes & ~FileAttributes.Hidden);
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.Write(ex, "AppConfigStore.TryClearHidden");
             }
         }
 
@@ -97,8 +128,9 @@ namespace AvatarGifTool
                     File.SetAttributes(this.configPath, attributes | FileAttributes.Hidden);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                ErrorLog.Write(ex, "AppConfigStore.TryMarkHidden");
             }
         }
     }
