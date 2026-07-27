@@ -27,6 +27,10 @@ namespace AvatarGifTool
         private const int PreferredWindowHeight = 860;
         private const int ParamsGearRowIndex = 3;
         private const int ParamsDyeRowIndex = 4;
+        private const int DyeGapBeforeHueRowIndex = 1;
+        private const int DyeHueRowIndex = 2;
+        private const int DyeGapAfterHueRowIndex = 3;
+        private const int MaxTemplateHistoryCount = 7;
         private const string DefaultTemplateText = "53065,64460,12015";
         private readonly TextBox txtBaseWz;
         private readonly AlignedInputBox txtTemplate;
@@ -35,10 +39,12 @@ namespace AvatarGifTool
         private readonly Panel pnlGear;
         private readonly AlignedInputBox txtGear;
         private readonly Label lblDyeAdjustmentsCaption;
+        private readonly Button btnResetDyeAdjustments;
         private readonly Panel pnlDyeAdjustments;
         private readonly ComboBox cboDyeColorType;
         private readonly Label lblDyeHueCaption;
         private readonly NumericUpDown nudDyeHue;
+        private readonly TrackBar trkDyeHue;
         private readonly TrackBar trkDyeSaturation;
         private readonly TrackBar trkDyeBrightness;
         private readonly NumericUpDown nudDyeSaturation;
@@ -136,6 +142,7 @@ namespace AvatarGifTool
             this.pnlGear = new Panel { Dock = DockStyle.Fill, AutoSize = true };
             this.txtGear = new AlignedInputBox { Dock = DockStyle.Fill };
             this.lblDyeAdjustmentsCaption = new Label { Text = "染色微调", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) };
+            this.btnResetDyeAdjustments = new Button { Text = "初始化", Anchor = AnchorStyles.Left };
             this.pnlDyeAdjustments = new Panel { Dock = DockStyle.Fill, AutoSize = true };
             this.cboDyeColorType = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
             this.cboDyeColorType.Items.AddRange(Program.SupportedPrismColorTypes.Cast<object>().ToArray());
@@ -148,8 +155,12 @@ namespace AvatarGifTool
                 DecimalPlaces = 0,
                 Increment = 1,
                 ThousandsSeparator = false,
-                TextAlign = HorizontalAlignment.Left,
+                TextAlign = HorizontalAlignment.Center,
+                Width = this.ScaleForLogicalPixels(70),
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0),
             };
+            this.trkDyeHue = CreateHueTrackBar();
             this.trkDyeSaturation = CreateAdjustmentTrackBar();
             this.trkDyeBrightness = CreateAdjustmentTrackBar();
             this.nudDyeSaturation = CreateAdjustmentNumericUpDown();
@@ -231,6 +242,7 @@ namespace AvatarGifTool
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                AutoScroll = false,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true,
                 Margin = new Padding(0),
@@ -255,10 +267,11 @@ namespace AvatarGifTool
             this.trkDyeSaturation.Value = ClampAdjustmentValue(this.config.DyeSaturationOffset);
             this.trkDyeBrightness.Value = ClampAdjustmentValue(this.config.DyeBrightnessOffset);
             this.SelectDyeColorType(Program.NormalizePrismType(this.config.DyePrismType));
-            this.nudDyeHue.Value = Math.Max((decimal)this.nudDyeHue.Minimum, Math.Min((decimal)this.nudDyeHue.Maximum, this.config.DyeHue));
+            this.trkDyeHue.Value = Math.Max(this.trkDyeHue.Minimum, Math.Min(this.trkDyeHue.Maximum, this.config.DyeHue));
             this.lastOpaqueBackgroundColor = Color.White;
             this.SetBackgroundColor(GetConfiguredBackgroundColor(), saveConfig: false, markPreviewDirty: false);
             this.SetBackgroundImagePath(this.config.BackgroundImagePath, saveConfig: false, markPreviewDirty: false);
+            this.SyncDyeHueEditorFromTrackBar();
             this.SyncDyeAdjustmentEditorsFromTrackBars();
             this.ApplySharedControlSizing();
 
@@ -404,6 +417,23 @@ namespace AvatarGifTool
             };
         }
 
+        private TrackBar CreateHueTrackBar()
+        {
+            return new TrackBar
+            {
+                Minimum = 0,
+                Maximum = 359,
+                TickFrequency = 30,
+                SmallChange = 1,
+                LargeChange = 30,
+                AutoSize = false,
+                Width = this.ScaleForLogicalPixels(260),
+                Height = this.ScaleForLogicalPixels(36),
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0),
+            };
+        }
+
         private NumericUpDown CreateAdjustmentNumericUpDown()
         {
             return new NumericUpDown
@@ -470,8 +500,8 @@ namespace AvatarGifTool
             int buttonHeight = this.ScaleForLogicalPixels(34);
             int primaryButtonHeight = this.ScaleForLogicalPixels(38);
             int historyLineHeight = TextRenderer.MeasureText("肤", this.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Height;
-            int historyButtonWidth = this.ScaleForLogicalPixels(168);
-            int historyButtonHeight = Math.Max(this.ScaleForLogicalPixels(88), (historyLineHeight * 3) + this.ScaleForLogicalPixels(20));
+            int historyButtonWidth = this.ScaleForLogicalPixels(132);
+            int historyButtonHeight = Math.Max(this.ScaleForLogicalPixels(68), (historyLineHeight * 3) + this.ScaleForLogicalPixels(12));
 
             ConfigureTextInput(this.txtTemplate, inputHeight);
             ConfigureTextInput(this.txtGear, inputHeight);
@@ -499,6 +529,7 @@ namespace AvatarGifTool
             ConfigureButton(this.btnPrevPage, this.ScaleForLogicalPixels(92), buttonHeight);
             ConfigureButton(this.btnNextPage, this.ScaleForLogicalPixels(92), buttonHeight);
             ConfigureButton(this.btnJumpPage, this.ScaleForLogicalPixels(80), buttonHeight);
+            ConfigureButton(this.btnResetDyeAdjustments, this.ScaleForLogicalPixels(72), buttonHeight);
             ConfigureButton(this.btnExportSettings, this.ScaleForLogicalPixels(120), primaryButtonHeight);
             ConfigureButton(this.btnExport, this.ScaleForLogicalPixels(120), primaryButtonHeight);
 
@@ -509,16 +540,27 @@ namespace AvatarGifTool
             this.btnBrowseBackgroundImage.Margin = new Padding(8, 0, 0, 0);
             this.btnClearBackgroundImage.Margin = new Padding(8, 0, 0, 0);
             this.btnNextPage.Margin = new Padding(8, 0, 0, 0);
+            this.btnResetDyeAdjustments.Margin = new Padding(8, 0, 0, 0);
             this.btnExportSettings.Margin = new Padding(0);
             this.btnExport.Margin = new Padding(0);
             this.chkSearchAppearanceOnly.Margin = new Padding(12, 7, 0, 0);
+            this.lblDyeAdjustmentsCaption.Margin = new Padding(0, 7, 14, 4);
 
             this.nudDyeHue.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
+            this.nudDyeHue.Width = this.ScaleForLogicalPixels(70);
             this.nudDyeHue.Margin = new Padding(0, 0, 10, 0);
+            this.lblDyeHueCaption.Margin = new Padding(0, 0, 8, 0);
+            this.trkDyeHue.Width = this.ScaleForLogicalPixels(260);
+            this.trkDyeHue.Height = this.ScaleForLogicalPixels(36);
+            this.trkDyeHue.Margin = new Padding(0);
             this.nudDyeSaturation.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudDyeSaturation.Margin = new Padding(0, 0, 10, 0);
+            this.trkDyeSaturation.Width = this.ScaleForLogicalPixels(260);
+            this.trkDyeSaturation.Height = this.ScaleForLogicalPixels(36);
             this.nudDyeBrightness.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudDyeBrightness.Margin = new Padding(0, 0, 10, 0);
+            this.trkDyeBrightness.Width = this.ScaleForLogicalPixels(260);
+            this.trkDyeBrightness.Height = this.ScaleForLogicalPixels(36);
             this.nudSearchPage.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudSearchPage.Margin = new Padding(0);
 
@@ -550,13 +592,13 @@ namespace AvatarGifTool
 
         private void InitializeHistoryButtons()
         {
-            for (int i = 0; i < 9; i++)
+            for (int i = 0; i < MaxTemplateHistoryCount; i++)
             {
                 var button = new HistoryTemplateButton
                 {
                     AutoSize = false,
                     Margin = new Padding(0, 0, 4, 4),
-                    Padding = new Padding(8, 6, 8, 6),
+                    Padding = new Padding(6, 4, 6, 4),
                     UseMnemonic = false,
                     Visible = false,
                     Tag = null,
@@ -596,7 +638,7 @@ namespace AvatarGifTool
                     HairName = item.HairName,
                 });
 
-                if (normalized.Count >= 9)
+                if (normalized.Count >= MaxTemplateHistoryCount)
                 {
                     break;
                 }
@@ -690,6 +732,19 @@ namespace AvatarGifTool
             {
                 this.nudDyeSaturation.Value = this.trkDyeSaturation.Value;
                 this.nudDyeBrightness.Value = this.trkDyeBrightness.Value;
+            }
+            finally
+            {
+                this.syncingDyeAdjustmentInputs = false;
+            }
+        }
+
+        private void SyncDyeHueEditorFromTrackBar()
+        {
+            this.syncingDyeAdjustmentInputs = true;
+            try
+            {
+                this.nudDyeHue.Value = this.trkDyeHue.Value;
             }
             finally
             {
@@ -831,11 +886,12 @@ namespace AvatarGifTool
             this.paramsLayout.Controls.Add(this.lblGearCaption, 0, 3);
             this.paramsLayout.Controls.Add(this.pnlGear, 1, 3);
 
+            int dyeRowGap = this.ScaleForLogicalPixels(6);
             this.dyeLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 3,
-                RowCount = 4,
+                RowCount = 6,
                 AutoSize = true,
                 Margin = new Padding(0),
             };
@@ -843,19 +899,23 @@ namespace AvatarGifTool
             this.dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             this.dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, dyeRowGap));
             this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0f));
             this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             this.dyeLayout.Controls.Add(new Label { Text = "色系", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
             this.dyeLayout.Controls.Add(this.cboDyeColorType, 1, 0);
-            this.dyeLayout.Controls.Add(this.lblDyeHueCaption, 0, 1);
-            this.dyeLayout.Controls.Add(this.nudDyeHue, 1, 1);
-            this.dyeLayout.Controls.Add(new Label { Text = "饱和度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 2);
-            this.dyeLayout.Controls.Add(this.nudDyeSaturation, 1, 2);
-            this.dyeLayout.Controls.Add(this.trkDyeSaturation, 2, 2);
-            this.dyeLayout.Controls.Add(new Label { Text = "亮度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 3);
-            this.dyeLayout.Controls.Add(this.nudDyeBrightness, 1, 3);
-            this.dyeLayout.Controls.Add(this.trkDyeBrightness, 2, 3);
+            this.dyeLayout.Controls.Add(this.btnResetDyeAdjustments, 2, 0);
+            this.dyeLayout.Controls.Add(this.lblDyeHueCaption, 0, DyeHueRowIndex);
+            this.dyeLayout.Controls.Add(this.nudDyeHue, 1, DyeHueRowIndex);
+            this.dyeLayout.Controls.Add(this.trkDyeHue, 2, DyeHueRowIndex);
+            this.dyeLayout.Controls.Add(new Label { Text = "饱和度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 4);
+            this.dyeLayout.Controls.Add(this.nudDyeSaturation, 1, 4);
+            this.dyeLayout.Controls.Add(this.trkDyeSaturation, 2, 4);
+            this.dyeLayout.Controls.Add(new Label { Text = "亮度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 5);
+            this.dyeLayout.Controls.Add(this.nudDyeBrightness, 1, 5);
+            this.dyeLayout.Controls.Add(this.trkDyeBrightness, 2, 5);
             this.pnlDyeAdjustments.Controls.Add(this.dyeLayout);
             this.pnlDyeAdjustments.Margin = new Padding(0, 0, 0, 6);
             this.paramsLayout.Controls.Add(this.lblDyeAdjustmentsCaption, 0, 4);
@@ -912,15 +972,13 @@ namespace AvatarGifTool
                 ColumnCount = 1,
                 RowCount = 2,
                 AutoSize = true,
-                Margin = new Padding(0),
+                MinimumSize = new Size(this.ScaleForLogicalPixels(560), this.ScaleForLogicalPixels(76)),
+                Margin = new Padding(0, 0, 0, this.ScaleForLogicalPixels(8)),
             };
             backgroundLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             backgroundLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             backgroundLayout.Controls.Add(backgroundTopRow, 0, 0);
             backgroundLayout.Controls.Add(paletteRow, 0, 1);
-            backgroundLayout.Margin = new Padding(0, 0, 0, 8);
-            this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 5);
-            this.paramsLayout.Controls.Add(backgroundLayout, 1, 5);
 
             var backgroundImageRow = new FlowLayoutPanel
             {
@@ -943,34 +1001,58 @@ namespace AvatarGifTool
                 Margin = new Padding(10, 8, 0, 0),
             });
 
-            var historyGroup = new GroupBox
-            {
-                Text = "历史搭配",
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(10, 0, 0, 0),
-                Padding = new Padding(8, 16, 8, 6),
-                MinimumSize = new Size(this.ScaleForLogicalPixels(220), 0),
-            };
-            historyGroup.Controls.Add(this.pnlHistoryButtons);
-
             var backgroundImageLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 2,
+                ColumnCount = 1,
                 RowCount = 1,
                 AutoSize = true,
-                Margin = new Padding(0),
+                MinimumSize = new Size(this.ScaleForLogicalPixels(560), this.ScaleForLogicalPixels(40)),
+                Margin = new Padding(0, 0, 0, this.ScaleForLogicalPixels(4)),
             };
-            backgroundImageLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             backgroundImageLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             backgroundImageLayout.Controls.Add(backgroundImageRow, 0, 0);
-            backgroundImageLayout.Controls.Add(historyGroup, 1, 0);
 
-            backgroundImageLayout.Margin = new Padding(0, 0, 0, 8);
+            int historyLineHeight = TextRenderer.MeasureText("肤", this.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Height;
+            int historyButtonWidth = this.ScaleForLogicalPixels(132);
+            int historyButtonHeight = Math.Max(this.ScaleForLogicalPixels(68), (historyLineHeight * 3) + this.ScaleForLogicalPixels(12));
+            int historyGroupWidth = ((historyButtonWidth + this.ScaleForLogicalPixels(4)) * MaxTemplateHistoryCount) + this.ScaleForLogicalPixels(22);
+            int historyGroupHeight = historyButtonHeight + this.ScaleForLogicalPixels(34);
+
+            var historyGroup = new GroupBox
+            {
+                Text = "历史搭配",
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                Margin = new Padding(10, 0, 0, 8),
+                Padding = new Padding(8, 18, 8, 8),
+                MinimumSize = new Size(historyGroupWidth, historyGroupHeight),
+            };
+            historyGroup.Controls.Add(this.pnlHistoryButtons);
+
+            var backgroundSectionLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 2,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0),
+                Padding = new Padding(0, 0, 0, this.ScaleForLogicalPixels(2)),
+            };
+            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            backgroundSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            backgroundSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            backgroundSectionLayout.Controls.Add(backgroundLayout, 0, 0);
+            backgroundSectionLayout.Controls.Add(backgroundImageLayout, 0, 1);
+            backgroundSectionLayout.Controls.Add(historyGroup, 1, 0);
+            backgroundSectionLayout.SetRowSpan(historyGroup, 2);
+
+            this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 5);
+            this.paramsLayout.Controls.Add(backgroundSectionLayout, 1, 5);
+            this.paramsLayout.SetRowSpan(backgroundSectionLayout, 2);
             this.paramsLayout.Controls.Add(new Label { Text = "背景图片", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0, 8, 14, 0) }, 0, 6);
-            this.paramsLayout.Controls.Add(backgroundImageLayout, 1, 6);
 
             var actionRow = new FlowLayoutPanel
             {
@@ -1116,6 +1198,7 @@ namespace AvatarGifTool
             this.txtTemplate.TextChanged += this.InputControlChanged;
             this.txtGear.TextChanged += this.InputControlChanged;
             this.cboDyeColorType.SelectedIndexChanged += this.DyeColorType_SelectedIndexChanged;
+            this.trkDyeHue.ValueChanged += this.DyeHueTrackBar_ValueChanged;
             this.nudDyeHue.ValueChanged += this.NudDyeHue_ValueChanged;
             this.trkDyeSaturation.ValueChanged += this.DyeAdjustmentControl_ValueChanged;
             this.trkDyeBrightness.ValueChanged += this.DyeAdjustmentControl_ValueChanged;
@@ -1128,6 +1211,7 @@ namespace AvatarGifTool
             this.btnBrowseBackgroundImage.Click += this.BtnBrowseBackgroundImage_Click;
             this.btnClearBackgroundImage.Click += this.BtnClearBackgroundImage_Click;
             this.btnValidatePreview.Click += this.BtnValidatePreview_Click;
+            this.btnResetDyeAdjustments.Click += this.BtnResetDyeAdjustments_Click;
             this.btnExportSettings.Click += this.BtnExportSettings_Click;
             this.btnExport.Click += this.BtnExport_Click;
             this.btnSearch.Click += this.BtnSearch_Click;
@@ -1320,6 +1404,7 @@ namespace AvatarGifTool
         private void CboMode_SelectedIndexChanged(object sender, EventArgs e)
         {
             this.UpdateModeUi();
+            this.UpdateSearchNavigationState();
             this.MarkPreviewDirty();
         }
 
@@ -1331,9 +1416,11 @@ namespace AvatarGifTool
             this.lblGearCaption.Visible = dyeLikeMode;
             this.pnlGear.Visible = dyeLikeMode;
             this.lblDyeAdjustmentsCaption.Visible = dyeLikeMode;
+            this.btnResetDyeAdjustments.Visible = dyeLikeMode;
             this.pnlDyeAdjustments.Visible = dyeLikeMode;
             this.lblDyeHueCaption.Visible = exactDyeMode;
             this.nudDyeHue.Visible = exactDyeMode;
+            this.trkDyeHue.Visible = exactDyeMode;
             this.txtGear.Enabled = dyeLikeMode && !this.isBusy;
 
             if (this.paramsLayout != null && this.paramsLayout.RowStyles.Count > ParamsDyeRowIndex)
@@ -1345,10 +1432,15 @@ namespace AvatarGifTool
                 this.paramsLayout.PerformLayout();
             }
 
-            if (this.dyeLayout != null && this.dyeLayout.RowStyles.Count > 1)
+            if (this.dyeLayout != null && this.dyeLayout.RowStyles.Count > DyeGapAfterHueRowIndex)
             {
-                this.dyeLayout.RowStyles[1].SizeType = exactDyeMode ? SizeType.AutoSize : SizeType.Absolute;
-                this.dyeLayout.RowStyles[1].Height = exactDyeMode ? 0f : 0f;
+                int dyeRowGap = this.ScaleForLogicalPixels(6);
+                this.dyeLayout.RowStyles[DyeGapBeforeHueRowIndex].SizeType = SizeType.Absolute;
+                this.dyeLayout.RowStyles[DyeGapBeforeHueRowIndex].Height = exactDyeMode ? dyeRowGap : 0f;
+                this.dyeLayout.RowStyles[DyeHueRowIndex].SizeType = exactDyeMode ? SizeType.AutoSize : SizeType.Absolute;
+                this.dyeLayout.RowStyles[DyeHueRowIndex].Height = exactDyeMode ? 0f : 0f;
+                this.dyeLayout.RowStyles[DyeGapAfterHueRowIndex].SizeType = SizeType.Absolute;
+                this.dyeLayout.RowStyles[DyeGapAfterHueRowIndex].Height = 0f;
                 this.dyeLayout.PerformLayout();
             }
 
@@ -1376,8 +1468,30 @@ namespace AvatarGifTool
             this.MarkPreviewDirty();
         }
 
+        private void DyeHueTrackBar_ValueChanged(object sender, EventArgs e)
+        {
+            this.SyncDyeHueEditorFromTrackBar();
+            this.SaveConfig();
+            this.MarkPreviewDirty();
+        }
+
         private void NudDyeHue_ValueChanged(object sender, EventArgs e)
         {
+            if (this.syncingDyeAdjustmentInputs)
+            {
+                return;
+            }
+
+            this.syncingDyeAdjustmentInputs = true;
+            try
+            {
+                this.trkDyeHue.Value = (int)this.nudDyeHue.Value;
+            }
+            finally
+            {
+                this.syncingDyeAdjustmentInputs = false;
+            }
+
             this.SaveConfig();
             this.MarkPreviewDirty();
         }
@@ -1413,6 +1527,18 @@ namespace AvatarGifTool
                 this.syncingDyeAdjustmentInputs = false;
             }
 
+            this.SaveConfig();
+            this.MarkPreviewDirty();
+        }
+
+        private void BtnResetDyeAdjustments_Click(object sender, EventArgs e)
+        {
+            this.SelectDyeColorType(0);
+            this.trkDyeHue.Value = 0;
+            this.nudDyeHue.Value = 0;
+            this.trkDyeSaturation.Value = 0;
+            this.trkDyeBrightness.Value = 0;
+            this.SyncDyeAdjustmentEditorsFromTrackBars();
             this.SaveConfig();
             this.MarkPreviewDirty();
         }
@@ -2279,7 +2405,7 @@ namespace AvatarGifTool
                 HairName = this.metadataResolver.ResolveName(preview.HairId.Value, Program.AppearanceIdKind.Hair),
             });
 
-            while (this.templateHistory.Count > 9)
+            while (this.templateHistory.Count > MaxTemplateHistoryCount)
             {
                 this.templateHistory.RemoveAt(this.templateHistory.Count - 1);
             }
@@ -2368,10 +2494,12 @@ namespace AvatarGifTool
             this.txtGear.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.cboDyeColorType.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.nudDyeHue.Enabled = controlsEnabled && this.IsExactDyeMode;
+            this.trkDyeHue.Enabled = controlsEnabled && this.IsExactDyeMode;
             this.trkDyeSaturation.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.trkDyeBrightness.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.nudDyeSaturation.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.nudDyeBrightness.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.btnResetDyeAdjustments.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.btnBrowseBase.Enabled = controlsEnabled && this.baseLoadState != BaseLoadState.Loading;
             this.btnPickBackgroundColor.Enabled = controlsEnabled;
             this.btnResetBackgroundColor.Enabled = controlsEnabled;
