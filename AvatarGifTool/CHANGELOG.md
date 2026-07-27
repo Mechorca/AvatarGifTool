@@ -13,6 +13,15 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.21.1
+
+- 调整头发 / 瞳色混染 UI：去掉混染滑条刻度，混染行控件垂直居中，并增加上下间距。
+
+### 2.21.0
+
+- 新增头发 / 瞳色混染功能，使用原项目 `AvatarPart.MixColor` / `MixOpacity` 混合逻辑。
+- 混染参数支持 UI 保存、预览说明、导出文件名区分，并同步支持命令行参数。
+
 ### 2.20.0
 
 - `色系` 选择框右侧新增 `初始化` 按钮，可一键恢复整体色系，并将颜色、饱和度、亮度重置为 0。

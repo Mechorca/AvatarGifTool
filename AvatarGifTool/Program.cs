@@ -54,6 +54,10 @@ namespace AvatarGifTool
 
         internal static IReadOnlyList<PrismColorTypeDefinition> SupportedPrismColorTypes => PrismColorTypeDefinitions;
 
+        internal static IReadOnlyList<string> SupportedHairMixColors => AvatarCanvas.HairColor;
+
+        internal static IReadOnlyList<string> SupportedFaceMixColors => AvatarCanvas.FaceColor;
+
         internal static int NormalizePrismType(int prismType)
         {
             return PrismColorTypeDefinitions.Any(type => type.Value == prismType)
@@ -196,6 +200,11 @@ namespace AvatarGifTool
             }
 
             avatar.ReloadEffects();
+            avatar.ApplyCosmeticMix(
+                options.HairMixColor,
+                options.HairMixOpacity,
+                options.FaceMixColor,
+                options.FaceMixOpacity);
 
             if (RequiresDyeTarget(options.Mode) && dyeTargetParts.Count == 0)
             {
@@ -767,6 +776,10 @@ namespace AvatarGifTool
                 "  --hue            Exact dye hue, default 0, range 0..359.",
                 "  --saturation     Saturation offset, default 0, range -99..99.",
                 "  --brightness     Brightness offset, default 0, range -99..99.",
+                "  --hair-mix-color Hair mix color, default 0. Supports 0..7 or color names: 黑, 红, 橙, 黄, 绿, 青, 紫, 褐.",
+                "  --hair-mix-opacity Hair mix opacity, default 0, range 0..100.",
+                "  --eye-mix-color  Eye/face mix color, default 0. Supports 0..7 or color names: 黑, 青, 红, 绿, 褐, 祖母绿, 紫, 紫水晶.",
+                "  --eye-mix-opacity Eye/face mix opacity, default 0, range 0..100.",
                 "  --bg-color       Background color, default #FFFFFF. Supports transparent / #RRGGBB / #AARRGGBB.",
                 "  --bg-image       Optional background image path. Supports png/jpg and uses cover scaling with crop.",
                 "  --actions        Optional normal-mode action list. Example: stand1,swingO1,jump",
@@ -833,6 +846,10 @@ namespace AvatarGifTool
             public int Hue { get; private set; }
             public int SaturationOffset { get; private set; }
             public int BrightnessOffset { get; private set; }
+            public int HairMixColor { get; private set; }
+            public int HairMixOpacity { get; private set; }
+            public int FaceMixColor { get; private set; }
+            public int FaceMixOpacity { get; private set; }
             public Color BackgroundColor { get; private set; }
             public string BackgroundImagePath { get; private set; }
             public string[] NormalActions { get; private set; }
@@ -851,6 +868,10 @@ namespace AvatarGifTool
                 int hue = 0,
                 int saturationOffset = 0,
                 int brightnessOffset = 0,
+                int hairMixColor = 0,
+                int hairMixOpacity = 0,
+                int faceMixColor = 0,
+                int faceMixOpacity = 0,
                 Color? backgroundColor = null,
                 string backgroundImagePath = null,
                 IEnumerable<string> normalActions = null,
@@ -870,6 +891,10 @@ namespace AvatarGifTool
                     Hue = hue,
                     SaturationOffset = saturationOffset,
                     BrightnessOffset = brightnessOffset,
+                    HairMixColor = hairMixColor,
+                    HairMixOpacity = hairMixOpacity,
+                    FaceMixColor = faceMixColor,
+                    FaceMixOpacity = faceMixOpacity,
                     BackgroundColor = backgroundColor ?? Color.White,
                     BackgroundImagePath = string.IsNullOrWhiteSpace(backgroundImagePath) ? null : backgroundImagePath.Trim(),
                     NormalActions = NormalizeNormalActionSelection(normalActions),
@@ -943,6 +968,10 @@ namespace AvatarGifTool
                     Hue = ParseInt(GetOptional(values, "hue", "0"), "hue"),
                     SaturationOffset = ParseInt(GetOptional(values, "saturation", "0"), "saturation"),
                     BrightnessOffset = ParseInt(GetOptional(values, "brightness", "0"), "brightness"),
+                    HairMixColor = ParseMixColor(GetOptional(values, "hair-mix-color", "0"), "hair-mix-color", SupportedHairMixColors),
+                    HairMixOpacity = ParseInt(GetOptional(values, "hair-mix-opacity", "0"), "hair-mix-opacity"),
+                    FaceMixColor = ParseMixColor(GetOptional(values, "face-mix-color", GetOptional(values, "eye-mix-color", "0")), "eye-mix-color", SupportedFaceMixColors),
+                    FaceMixOpacity = ParseInt(GetOptional(values, "face-mix-opacity", GetOptional(values, "eye-mix-opacity", "0")), "eye-mix-opacity"),
                     BackgroundColor = ParseColor(GetOptional(values, "bg-color", "#FFFFFF"), "bg-color"),
                     BackgroundImagePath = NormalizeOptionalPath(GetOptional(values, "bg-image", null)),
                     NormalActions = NormalizeNormalActionSelection(ParseOptionalActionList(GetOptional(values, "actions", null), "actions")),
@@ -1009,6 +1038,19 @@ namespace AvatarGifTool
                 if (this.BrightnessOffset < -99 || this.BrightnessOffset > 99)
                 {
                     throw new ArgumentOutOfRangeException(nameof(this.BrightnessOffset), "brightness must be between -99 and 99.");
+                }
+
+                ValidateMixColor(this.HairMixColor, SupportedHairMixColors, nameof(this.HairMixColor), "hair-mix-color");
+                ValidateMixColor(this.FaceMixColor, SupportedFaceMixColors, nameof(this.FaceMixColor), "eye-mix-color");
+
+                if (this.HairMixOpacity < 0 || this.HairMixOpacity > 100)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(this.HairMixOpacity), "hair-mix-opacity must be between 0 and 100.");
+                }
+
+                if (this.FaceMixOpacity < 0 || this.FaceMixOpacity > 100)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(this.FaceMixOpacity), "eye-mix-opacity must be between 0 and 100.");
                 }
 
                 if (this.CellGap < 0)
@@ -1121,6 +1163,39 @@ namespace AvatarGifTool
                 }
 
                 return colorType.Value;
+            }
+
+            private static int ParseMixColor(string value, string key, IReadOnlyList<string> colorNames)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    throw new ArgumentException($"Argument '{key}' must not be empty.");
+                }
+
+                string text = value.Trim();
+                if (int.TryParse(text, out int index))
+                {
+                    ValidateMixColor(index, colorNames, key, key);
+                    return index;
+                }
+
+                for (int i = 0; i < colorNames.Count; i++)
+                {
+                    if (string.Equals(colorNames[i], text, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return i;
+                    }
+                }
+
+                throw new ArgumentException($"Argument '{key}' must be 0..{colorNames.Count - 1} or one of: {string.Join(", ", colorNames)}.");
+            }
+
+            private static void ValidateMixColor(int color, IReadOnlyList<string> colorNames, string paramName, string displayName)
+            {
+                if (color < 0 || color >= colorNames.Count)
+                {
+                    throw new ArgumentOutOfRangeException(paramName, $"{displayName} must be between 0 and {colorNames.Count - 1}.");
+                }
             }
 
             private static Color ParseColor(string value, string key)
@@ -2022,9 +2097,51 @@ namespace AvatarGifTool
                 this.canvas.ClearSkinCache();
             }
 
+            public void ApplyCosmeticMix(int hairMixColor, int hairMixOpacity, int faceMixColor, int faceMixOpacity)
+            {
+                bool changed = ApplyPartMix(this.canvas.Hair, hairMixColor, hairMixOpacity)
+                    | ApplyPartMix(this.canvas.Face, faceMixColor, faceMixOpacity);
+
+                if (changed)
+                {
+                    this.canvas.ClearSkinCache();
+                }
+            }
+
             public void ReloadEffects()
             {
                 this.canvas.LoadAllEffects();
+            }
+
+            private static bool ApplyPartMix(AvatarPart part, int mixColor, int mixOpacity)
+            {
+                if (part == null)
+                {
+                    return false;
+                }
+
+                int targetColor = part.BaseColor;
+                int targetOpacity = 0;
+
+                if (mixOpacity > 0
+                    && part.MixNodes != null
+                    && mixColor >= 0
+                    && mixColor < part.MixNodes.Length
+                    && part.MixNodes[mixColor] != null
+                    && part.BaseColor != mixColor)
+                {
+                    targetColor = mixColor;
+                    targetOpacity = Math.Max(0, Math.Min(100, mixOpacity));
+                }
+
+                if (part.MixColor == targetColor && part.MixOpacity == targetOpacity)
+                {
+                    return false;
+                }
+
+                part.MixColor = targetColor;
+                part.MixOpacity = targetOpacity;
+                return true;
             }
 
             private string SelectEffectActionName(int layerIndex, string actionName)

@@ -49,6 +49,14 @@ namespace AvatarGifTool
         private readonly TrackBar trkDyeBrightness;
         private readonly NumericUpDown nudDyeSaturation;
         private readonly NumericUpDown nudDyeBrightness;
+        private readonly Label lblCosmeticMixCaption;
+        private readonly Panel pnlCosmeticMix;
+        private readonly ComboBox cboHairMixColor;
+        private readonly NumericUpDown nudHairMixOpacity;
+        private readonly TrackBar trkHairMixOpacity;
+        private readonly ComboBox cboFaceMixColor;
+        private readonly NumericUpDown nudFaceMixOpacity;
+        private readonly TrackBar trkFaceMixOpacity;
         private readonly TextBox txtPreview;
         private readonly AlignedInputBox txtSearch;
         private readonly CheckBox chkSearchAppearanceOnly;
@@ -165,6 +173,14 @@ namespace AvatarGifTool
             this.trkDyeBrightness = CreateAdjustmentTrackBar();
             this.nudDyeSaturation = CreateAdjustmentNumericUpDown();
             this.nudDyeBrightness = CreateAdjustmentNumericUpDown();
+            this.lblCosmeticMixCaption = new Label { Text = "头脸混染", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) };
+            this.pnlCosmeticMix = new Panel { Dock = DockStyle.Fill, AutoSize = true };
+            this.cboHairMixColor = CreateMixColorComboBox(Program.SupportedHairMixColors);
+            this.nudHairMixOpacity = CreateMixOpacityNumericUpDown();
+            this.trkHairMixOpacity = CreateMixOpacityTrackBar();
+            this.cboFaceMixColor = CreateMixColorComboBox(Program.SupportedFaceMixColors);
+            this.nudFaceMixOpacity = CreateMixOpacityNumericUpDown();
+            this.trkFaceMixOpacity = CreateMixOpacityTrackBar();
             this.txtPreview = new TextBox
             {
                 Dock = DockStyle.Fill,
@@ -268,11 +284,16 @@ namespace AvatarGifTool
             this.trkDyeBrightness.Value = ClampAdjustmentValue(this.config.DyeBrightnessOffset);
             this.SelectDyeColorType(Program.NormalizePrismType(this.config.DyePrismType));
             this.trkDyeHue.Value = Math.Max(this.trkDyeHue.Minimum, Math.Min(this.trkDyeHue.Maximum, this.config.DyeHue));
+            this.cboHairMixColor.SelectedIndex = ClampColorIndex(this.config.HairMixColor, Program.SupportedHairMixColors.Count);
+            this.trkHairMixOpacity.Value = ClampMixOpacity(this.config.HairMixOpacity);
+            this.cboFaceMixColor.SelectedIndex = ClampColorIndex(this.config.FaceMixColor, Program.SupportedFaceMixColors.Count);
+            this.trkFaceMixOpacity.Value = ClampMixOpacity(this.config.FaceMixOpacity);
             this.lastOpaqueBackgroundColor = Color.White;
             this.SetBackgroundColor(GetConfiguredBackgroundColor(), saveConfig: false, markPreviewDirty: false);
             this.SetBackgroundImagePath(this.config.BackgroundImagePath, saveConfig: false, markPreviewDirty: false);
             this.SyncDyeHueEditorFromTrackBar();
             this.SyncDyeAdjustmentEditorsFromTrackBars();
+            this.SyncMixOpacityEditorsFromTrackBars();
             this.ApplySharedControlSizing();
 
             this.rootLayout = this.BuildLayout();
@@ -366,6 +387,14 @@ namespace AvatarGifTool
             ? colorType.Value
             : 0;
 
+        private int SelectedHairMixColor => Math.Max(0, this.cboHairMixColor.SelectedIndex);
+
+        private int SelectedHairMixOpacity => ClampMixOpacity(this.trkHairMixOpacity.Value);
+
+        private int SelectedFaceMixColor => Math.Max(0, this.cboFaceMixColor.SelectedIndex);
+
+        private int SelectedFaceMixOpacity => ClampMixOpacity(this.trkFaceMixOpacity.Value);
+
         private const string SearchTargetName = "name";
 
         private const string SearchTargetDescription = "description";
@@ -434,6 +463,52 @@ namespace AvatarGifTool
             };
         }
 
+        private ComboBox CreateMixColorComboBox(IReadOnlyList<string> colorNames)
+        {
+            var comboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Anchor = AnchorStyles.Left,
+            };
+            comboBox.Items.AddRange(colorNames.Cast<object>().ToArray());
+            comboBox.SelectedIndex = 0;
+            return comboBox;
+        }
+
+        private NumericUpDown CreateMixOpacityNumericUpDown()
+        {
+            return new NumericUpDown
+            {
+                Minimum = 0,
+                Maximum = 100,
+                DecimalPlaces = 0,
+                Increment = 1,
+                ThousandsSeparator = false,
+                TextAlign = HorizontalAlignment.Center,
+                Width = this.ScaleForLogicalPixels(62),
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0),
+            };
+        }
+
+        private TrackBar CreateMixOpacityTrackBar()
+        {
+            return new TrackBar
+            {
+                Minimum = 0,
+                Maximum = 100,
+                TickFrequency = 10,
+                SmallChange = 1,
+                LargeChange = 10,
+                AutoSize = false,
+                Width = this.ScaleForLogicalPixels(160),
+                Height = this.ScaleForLogicalPixels(30),
+                TickStyle = TickStyle.None,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0),
+            };
+        }
+
         private NumericUpDown CreateAdjustmentNumericUpDown()
         {
             return new NumericUpDown
@@ -476,6 +551,21 @@ namespace AvatarGifTool
         private int ClampAdjustmentValue(int value)
         {
             return Math.Max(-99, Math.Min(99, value));
+        }
+
+        private static int ClampMixOpacity(int value)
+        {
+            return Math.Max(0, Math.Min(100, value));
+        }
+
+        private static int ClampColorIndex(int value, int colorCount)
+        {
+            if (colorCount <= 0)
+            {
+                return 0;
+            }
+
+            return Math.Max(0, Math.Min(colorCount - 1, value));
         }
 
         private static string GetWindowTitle()
@@ -545,6 +635,7 @@ namespace AvatarGifTool
             this.btnExport.Margin = new Padding(0);
             this.chkSearchAppearanceOnly.Margin = new Padding(12, 7, 0, 0);
             this.lblDyeAdjustmentsCaption.Margin = new Padding(0, 7, 14, 4);
+            this.lblCosmeticMixCaption.Margin = new Padding(0, 7, 14, 4);
 
             this.nudDyeHue.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudDyeHue.Width = this.ScaleForLogicalPixels(70);
@@ -561,6 +652,12 @@ namespace AvatarGifTool
             this.nudDyeBrightness.Margin = new Padding(0, 0, 10, 0);
             this.trkDyeBrightness.Width = this.ScaleForLogicalPixels(260);
             this.trkDyeBrightness.Height = this.ScaleForLogicalPixels(36);
+            ConfigureMixColorComboBox(this.cboHairMixColor, this.ScaleForLogicalPixels(78), inputHeight);
+            ConfigureMixColorComboBox(this.cboFaceMixColor, this.ScaleForLogicalPixels(92), inputHeight);
+            ConfigureMixOpacityInput(this.nudHairMixOpacity, inputHeight);
+            ConfigureMixOpacityInput(this.nudFaceMixOpacity, inputHeight);
+            ConfigureMixOpacityTrackBar(this.trkHairMixOpacity);
+            ConfigureMixOpacityTrackBar(this.trkFaceMixOpacity);
             this.nudSearchPage.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudSearchPage.Margin = new Padding(0);
 
@@ -588,6 +685,28 @@ namespace AvatarGifTool
             button.Margin = new Padding(0);
             button.MinimumSize = new Size(minWidth, minHeight);
             button.AutoSize = true;
+        }
+
+        private static void ConfigureMixColorComboBox(ComboBox comboBox, int width, int height)
+        {
+            comboBox.Margin = new Padding(0, 0, 8, 0);
+            comboBox.MinimumSize = new Size(width, height);
+            comboBox.Width = width;
+            comboBox.IntegralHeight = false;
+        }
+
+        private void ConfigureMixOpacityInput(NumericUpDown numericUpDown, int height)
+        {
+            numericUpDown.MinimumSize = new Size(this.ScaleForLogicalPixels(62), height);
+            numericUpDown.Width = this.ScaleForLogicalPixels(62);
+            numericUpDown.Margin = new Padding(0, 0, 8, 0);
+        }
+
+        private void ConfigureMixOpacityTrackBar(TrackBar trackBar)
+        {
+            trackBar.Width = this.ScaleForLogicalPixels(160);
+            trackBar.Height = this.ScaleForLogicalPixels(30);
+            trackBar.Margin = new Padding(0, 0, 14, 0);
         }
 
         private void InitializeHistoryButtons()
@@ -752,6 +871,20 @@ namespace AvatarGifTool
             }
         }
 
+        private void SyncMixOpacityEditorsFromTrackBars()
+        {
+            this.syncingDyeAdjustmentInputs = true;
+            try
+            {
+                this.nudHairMixOpacity.Value = this.trkHairMixOpacity.Value;
+                this.nudFaceMixOpacity.Value = this.trkFaceMixOpacity.Value;
+            }
+            finally
+            {
+                this.syncingDyeAdjustmentInputs = false;
+            }
+        }
+
         private void SelectDyeColorType(int prismType)
         {
             prismType = Program.NormalizePrismType(prismType);
@@ -811,13 +944,13 @@ namespace AvatarGifTool
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 2,
-                RowCount = 8,
+                RowCount = 9,
                 Padding = new Padding(12, 8, 12, 8),
                 Margin = new Padding(0),
             };
             this.paramsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             this.paramsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < 9; i++)
             {
                 this.paramsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             }
@@ -920,6 +1053,37 @@ namespace AvatarGifTool
             this.pnlDyeAdjustments.Margin = new Padding(0, 0, 0, 6);
             this.paramsLayout.Controls.Add(this.lblDyeAdjustmentsCaption, 0, 4);
             this.paramsLayout.Controls.Add(this.pnlDyeAdjustments, 1, 4);
+
+            int mixRowHeight = this.ScaleForLogicalPixels(42);
+            var mixLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 10,
+                RowCount = 1,
+                Margin = new Padding(0, this.ScaleForLogicalPixels(4), 0, this.ScaleForLogicalPixels(8)),
+            };
+            for (int i = 0; i < 10; i++)
+            {
+                mixLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            }
+            mixLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, mixRowHeight));
+
+            mixLayout.Controls.Add(new Label { Text = "头发", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
+            mixLayout.Controls.Add(this.cboHairMixColor, 1, 0);
+            mixLayout.Controls.Add(this.nudHairMixOpacity, 2, 0);
+            mixLayout.Controls.Add(new Label { Text = "%", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 3, 0);
+            mixLayout.Controls.Add(this.trkHairMixOpacity, 4, 0);
+            mixLayout.Controls.Add(new Label { Text = "瞳色", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(4, 0, 8, 0) }, 5, 0);
+            mixLayout.Controls.Add(this.cboFaceMixColor, 6, 0);
+            mixLayout.Controls.Add(this.nudFaceMixOpacity, 7, 0);
+            mixLayout.Controls.Add(new Label { Text = "%", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 8, 0);
+            mixLayout.Controls.Add(this.trkFaceMixOpacity, 9, 0);
+            this.pnlCosmeticMix.Controls.Add(mixLayout);
+            this.pnlCosmeticMix.Margin = new Padding(0, 0, 0, this.ScaleForLogicalPixels(8));
+            this.paramsLayout.Controls.Add(this.lblCosmeticMixCaption, 0, 5);
+            this.paramsLayout.Controls.Add(this.pnlCosmeticMix, 1, 5);
 
             var backgroundTopRow = new FlowLayoutPanel
             {
@@ -1049,10 +1213,10 @@ namespace AvatarGifTool
             backgroundSectionLayout.Controls.Add(historyGroup, 1, 0);
             backgroundSectionLayout.SetRowSpan(historyGroup, 2);
 
-            this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 5);
-            this.paramsLayout.Controls.Add(backgroundSectionLayout, 1, 5);
+            this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 6);
+            this.paramsLayout.Controls.Add(backgroundSectionLayout, 1, 6);
             this.paramsLayout.SetRowSpan(backgroundSectionLayout, 2);
-            this.paramsLayout.Controls.Add(new Label { Text = "背景图片", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0, 8, 14, 0) }, 0, 6);
+            this.paramsLayout.Controls.Add(new Label { Text = "背景图片", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0, 8, 14, 0) }, 0, 7);
 
             var actionRow = new FlowLayoutPanel
             {
@@ -1071,7 +1235,7 @@ namespace AvatarGifTool
                 Margin = new Padding(0),
             });
             actionRow.Controls.Add(this.btnExport);
-            this.paramsLayout.Controls.Add(actionRow, 1, 7);
+            this.paramsLayout.Controls.Add(actionRow, 1, 8);
 
             var searchLayout = new TableLayoutPanel
             {
@@ -1204,6 +1368,12 @@ namespace AvatarGifTool
             this.trkDyeBrightness.ValueChanged += this.DyeAdjustmentControl_ValueChanged;
             this.nudDyeSaturation.ValueChanged += this.NudDyeAdjustment_ValueChanged;
             this.nudDyeBrightness.ValueChanged += this.NudDyeAdjustment_ValueChanged;
+            this.cboHairMixColor.SelectedIndexChanged += this.CosmeticMixControl_ValueChanged;
+            this.cboFaceMixColor.SelectedIndexChanged += this.CosmeticMixControl_ValueChanged;
+            this.trkHairMixOpacity.ValueChanged += this.MixOpacityTrackBar_ValueChanged;
+            this.trkFaceMixOpacity.ValueChanged += this.MixOpacityTrackBar_ValueChanged;
+            this.nudHairMixOpacity.ValueChanged += this.NudMixOpacity_ValueChanged;
+            this.nudFaceMixOpacity.ValueChanged += this.NudMixOpacity_ValueChanged;
             this.cboMode.SelectedIndexChanged += this.CboMode_SelectedIndexChanged;
             this.btnBrowseBase.Click += this.BtnBrowseBase_Click;
             this.btnPickBackgroundColor.Click += this.BtnPickBackgroundColor_Click;
@@ -1531,6 +1701,47 @@ namespace AvatarGifTool
             this.MarkPreviewDirty();
         }
 
+        private void CosmeticMixControl_ValueChanged(object sender, EventArgs e)
+        {
+            this.SaveConfig();
+            this.MarkPreviewDirty();
+        }
+
+        private void MixOpacityTrackBar_ValueChanged(object sender, EventArgs e)
+        {
+            this.SyncMixOpacityEditorsFromTrackBars();
+            this.SaveConfig();
+            this.MarkPreviewDirty();
+        }
+
+        private void NudMixOpacity_ValueChanged(object sender, EventArgs e)
+        {
+            if (this.syncingDyeAdjustmentInputs)
+            {
+                return;
+            }
+
+            this.syncingDyeAdjustmentInputs = true;
+            try
+            {
+                if (ReferenceEquals(sender, this.nudHairMixOpacity))
+                {
+                    this.trkHairMixOpacity.Value = (int)this.nudHairMixOpacity.Value;
+                }
+                else if (ReferenceEquals(sender, this.nudFaceMixOpacity))
+                {
+                    this.trkFaceMixOpacity.Value = (int)this.nudFaceMixOpacity.Value;
+                }
+            }
+            finally
+            {
+                this.syncingDyeAdjustmentInputs = false;
+            }
+
+            this.SaveConfig();
+            this.MarkPreviewDirty();
+        }
+
         private void BtnResetDyeAdjustments_Click(object sender, EventArgs e)
         {
             this.SelectDyeColorType(0);
@@ -1706,7 +1917,17 @@ namespace AvatarGifTool
                 string template = this.BuildTemplateIdText();
                 string gearText = this.BuildGearIdText();
                 ResolvedAppearancePreview preview = await Task.Run(() =>
-                    this.metadataResolver.Resolve(baseWzPath, template, gearText, this.SelectedRenderMode, this.SelectedNormalExportActions, this.SelectedDyeExportAction));
+                    this.metadataResolver.Resolve(
+                        baseWzPath,
+                        template,
+                        gearText,
+                        this.SelectedRenderMode,
+                        this.SelectedNormalExportActions,
+                        this.SelectedDyeExportAction,
+                        this.SelectedHairMixColor,
+                        this.SelectedHairMixOpacity,
+                        this.SelectedFaceMixColor,
+                        this.SelectedFaceMixOpacity));
 
                 if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
                 {
@@ -1759,7 +1980,17 @@ namespace AvatarGifTool
                 string gearText = this.BuildGearIdText();
 
                 ResolvedAppearancePreview preview = await Task.Run(() =>
-                    this.metadataResolver.Resolve(baseWzPath, template, gearText, this.SelectedRenderMode, this.SelectedNormalExportActions, this.SelectedDyeExportAction));
+                    this.metadataResolver.Resolve(
+                        baseWzPath,
+                        template,
+                        gearText,
+                        this.SelectedRenderMode,
+                        this.SelectedNormalExportActions,
+                        this.SelectedDyeExportAction,
+                        this.SelectedHairMixColor,
+                        this.SelectedHairMixOpacity,
+                        this.SelectedFaceMixColor,
+                        this.SelectedFaceMixOpacity));
 
                 this.txtPreview.Text = preview.PreviewText;
                 this.RememberTemplateHistory(preview);
@@ -1779,6 +2010,10 @@ namespace AvatarGifTool
                     hue: (int)this.nudDyeHue.Value,
                     saturationOffset: this.trkDyeSaturation.Value,
                     brightnessOffset: this.trkDyeBrightness.Value,
+                    hairMixColor: this.SelectedHairMixColor,
+                    hairMixOpacity: this.SelectedHairMixOpacity,
+                    faceMixColor: this.SelectedFaceMixColor,
+                    faceMixOpacity: this.SelectedFaceMixOpacity,
                     backgroundColor: this.currentBackgroundColor,
                     backgroundImagePath: this.currentBackgroundImagePath,
                     normalActions: this.SelectedNormalExportActions,
@@ -2500,6 +2735,12 @@ namespace AvatarGifTool
             this.nudDyeSaturation.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.nudDyeBrightness.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.btnResetDyeAdjustments.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.cboHairMixColor.Enabled = controlsEnabled;
+            this.nudHairMixOpacity.Enabled = controlsEnabled;
+            this.trkHairMixOpacity.Enabled = controlsEnabled;
+            this.cboFaceMixColor.Enabled = controlsEnabled;
+            this.nudFaceMixOpacity.Enabled = controlsEnabled;
+            this.trkFaceMixOpacity.Enabled = controlsEnabled;
             this.btnBrowseBase.Enabled = controlsEnabled && this.baseLoadState != BaseLoadState.Loading;
             this.btnPickBackgroundColor.Enabled = controlsEnabled;
             this.btnResetBackgroundColor.Enabled = controlsEnabled;
@@ -2573,6 +2814,10 @@ namespace AvatarGifTool
             this.config.DyeBrightnessOffset = this.ClampAdjustmentValue(this.trkDyeBrightness.Value);
             this.config.DyePrismType = this.SelectedDyePrismType;
             this.config.DyeHue = (int)this.nudDyeHue.Value;
+            this.config.HairMixColor = this.SelectedHairMixColor;
+            this.config.HairMixOpacity = this.SelectedHairMixOpacity;
+            this.config.FaceMixColor = this.SelectedFaceMixColor;
+            this.config.FaceMixOpacity = this.SelectedFaceMixOpacity;
             this.config.BackgroundColorArgb = this.currentBackgroundColor.ToArgb();
             this.config.BackgroundImagePath = this.currentBackgroundImagePath;
             this.config.SearchAppearanceOnly = this.chkSearchAppearanceOnly.Checked;
@@ -2703,12 +2948,20 @@ namespace AvatarGifTool
             string gearText,
             Program.RenderMode renderMode,
             IEnumerable<string> normalActions,
-            string dyeAction)
+            string dyeAction,
+            int hairMixColor,
+            int hairMixOpacity,
+            int faceMixColor,
+            int faceMixOpacity)
         {
             this.EnsureLoaded(baseWzPath);
 
             bool dyeGridMode = renderMode == Program.RenderMode.DyeGrid;
             bool dyeLikeMode = renderMode == Program.RenderMode.DyeGrid || renderMode == Program.RenderMode.ExactDye;
+            hairMixColor = ClampColorIndex(hairMixColor, Program.SupportedHairMixColors.Count);
+            faceMixColor = ClampColorIndex(faceMixColor, Program.SupportedFaceMixColors.Count);
+            hairMixOpacity = ClampMixOpacity(hairMixOpacity);
+            faceMixOpacity = ClampMixOpacity(faceMixOpacity);
             Program.TemplateAnalysis analysis = Program.AnalyzeTemplate(templateText, this.ClassifyAppearanceId);
             string[] selectedNormalActions = Program.NormalizeNormalActionSelection(normalActions);
             string selectedDyeAction = Program.NormalizeDyeActionSelection(dyeAction);
@@ -2780,7 +3033,8 @@ namespace AvatarGifTool
             string fileBaseName = BuildFileBaseName(
                 fileNameEntries.Where(entry => entry.Id.HasValue).Select(entry => entry.Name),
                 renderMode,
-                selectedActionsForFileName);
+                selectedActionsForFileName,
+                BuildCosmeticMixFileNameParts(hairMixColor, hairMixOpacity, faceMixColor, faceMixOpacity));
             string outputPath = Path.Combine(AppContext.BaseDirectory, fileBaseName + ".gif");
 
             var lines = new List<string>();
@@ -2813,6 +3067,14 @@ namespace AvatarGifTool
             if (dyeLikeMode)
             {
                 lines.Add($"染色对象: {dyeTargetText}");
+            }
+            if (hairMixOpacity > 0)
+            {
+                lines.Add($"头发混染: {Program.SupportedHairMixColors[hairMixColor]} {hairMixOpacity}%");
+            }
+            if (faceMixOpacity > 0)
+            {
+                lines.Add($"瞳色混染: {Program.SupportedFaceMixColors[faceMixColor]} {faceMixOpacity}%");
             }
             lines.Add($"导出动作: {string.Join(" / ", selectedActionsForFileName)}");
             lines.Add(string.Empty);
@@ -3956,7 +4218,11 @@ namespace AvatarGifTool
             return Program.ParseIdList(gearText, "Gear");
         }
 
-        private static string BuildFileBaseName(IEnumerable<string> names, Program.RenderMode renderMode, IEnumerable<string> actionNames)
+        private static string BuildFileBaseName(
+            IEnumerable<string> names,
+            Program.RenderMode renderMode,
+            IEnumerable<string> actionNames,
+            IEnumerable<string> extraParts = null)
         {
             var parts = names
                 .Select(SanitizeFileNamePart)
@@ -3967,6 +4233,9 @@ namespace AvatarGifTool
             parts.AddRange((actionNames ?? Enumerable.Empty<string>())
                 .Select(SanitizeFileNamePart)
                 .Where(part => !string.IsNullOrWhiteSpace(part)));
+            parts.AddRange((extraParts ?? Enumerable.Empty<string>())
+                .Select(SanitizeFileNamePart)
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
 
             if (parts.Count == 0)
             {
@@ -3974,6 +4243,34 @@ namespace AvatarGifTool
             }
 
             return string.Join("_", parts);
+        }
+
+        private static IEnumerable<string> BuildCosmeticMixFileNameParts(int hairMixColor, int hairMixOpacity, int faceMixColor, int faceMixOpacity)
+        {
+            if (hairMixOpacity > 0)
+            {
+                yield return $"头发混染{Program.SupportedHairMixColors[hairMixColor]}{hairMixOpacity}";
+            }
+
+            if (faceMixOpacity > 0)
+            {
+                yield return $"瞳色混染{Program.SupportedFaceMixColors[faceMixColor]}{faceMixOpacity}";
+            }
+        }
+
+        private static int ClampMixOpacity(int value)
+        {
+            return Math.Max(0, Math.Min(100, value));
+        }
+
+        private static int ClampColorIndex(int value, int colorCount)
+        {
+            if (colorCount <= 0)
+            {
+                return 0;
+            }
+
+            return Math.Max(0, Math.Min(colorCount - 1, value));
         }
 
         private static string GetRenderModeFileNamePart(Program.RenderMode renderMode)
