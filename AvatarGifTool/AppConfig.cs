@@ -13,6 +13,8 @@ namespace AvatarGifTool
         public int WindowHeight { get; set; }
         public int DyeSaturationOffset { get; set; }
         public int DyeBrightnessOffset { get; set; }
+        public int DyePrismType { get; set; }
+        public int DyeHue { get; set; }
         public int BackgroundColorArgb { get; set; } = Color.White.ToArgb();
         public string BackgroundImagePath { get; set; }
         public bool SearchAppearanceOnly { get; set; } = true;

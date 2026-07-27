@@ -36,6 +36,9 @@ namespace AvatarGifTool
         private readonly AlignedInputBox txtGear;
         private readonly Label lblDyeAdjustmentsCaption;
         private readonly Panel pnlDyeAdjustments;
+        private readonly ComboBox cboDyeColorType;
+        private readonly Label lblDyeHueCaption;
+        private readonly NumericUpDown nudDyeHue;
         private readonly TrackBar trkDyeSaturation;
         private readonly TrackBar trkDyeBrightness;
         private readonly NumericUpDown nudDyeSaturation;
@@ -71,6 +74,7 @@ namespace AvatarGifTool
         private AfrmTooltip searchPreviewTooltip;
         private readonly TableLayoutPanel rootLayout;
         private TableLayoutPanel paramsLayout;
+        private TableLayoutPanel dyeLayout;
         private readonly System.Windows.Forms.Timer previewTimer;
         private readonly ColorDialog backgroundColorDialog;
         private readonly MetadataResolver metadataResolver;
@@ -126,13 +130,26 @@ namespace AvatarGifTool
                 Text = DefaultTemplateText,
             };
             this.cboMode = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-            this.cboMode.Items.AddRange(new object[] { "普通模式", "染色模式" });
+            this.cboMode.Items.AddRange(new object[] { "普通模式", "染色模式", "精确染色模式" });
             this.cboMode.SelectedIndex = 0;
             this.lblGearCaption = new Label { Text = "Gear", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) };
             this.pnlGear = new Panel { Dock = DockStyle.Fill, AutoSize = true };
             this.txtGear = new AlignedInputBox { Dock = DockStyle.Fill };
             this.lblDyeAdjustmentsCaption = new Label { Text = "染色微调", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) };
             this.pnlDyeAdjustments = new Panel { Dock = DockStyle.Fill, AutoSize = true };
+            this.cboDyeColorType = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+            this.cboDyeColorType.Items.AddRange(Program.SupportedPrismColorTypes.Cast<object>().ToArray());
+            this.cboDyeColorType.SelectedIndex = 0;
+            this.lblDyeHueCaption = new Label { Text = "颜色", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) };
+            this.nudDyeHue = new NumericUpDown
+            {
+                Minimum = 0,
+                Maximum = 359,
+                DecimalPlaces = 0,
+                Increment = 1,
+                ThousandsSeparator = false,
+                TextAlign = HorizontalAlignment.Left,
+            };
             this.trkDyeSaturation = CreateAdjustmentTrackBar();
             this.trkDyeBrightness = CreateAdjustmentTrackBar();
             this.nudDyeSaturation = CreateAdjustmentNumericUpDown();
@@ -237,6 +254,8 @@ namespace AvatarGifTool
 
             this.trkDyeSaturation.Value = ClampAdjustmentValue(this.config.DyeSaturationOffset);
             this.trkDyeBrightness.Value = ClampAdjustmentValue(this.config.DyeBrightnessOffset);
+            this.SelectDyeColorType(Program.NormalizePrismType(this.config.DyePrismType));
+            this.nudDyeHue.Value = Math.Max((decimal)this.nudDyeHue.Minimum, Math.Min((decimal)this.nudDyeHue.Maximum, this.config.DyeHue));
             this.lastOpaqueBackgroundColor = Color.White;
             this.SetBackgroundColor(GetConfiguredBackgroundColor(), saveConfig: false, markPreviewDirty: false);
             this.SetBackgroundImagePath(this.config.BackgroundImagePath, saveConfig: false, markPreviewDirty: false);
@@ -316,9 +335,23 @@ namespace AvatarGifTool
 
         private bool IsDyeMode => this.cboMode.SelectedIndex == 1;
 
+        private bool IsExactDyeMode => this.cboMode.SelectedIndex == 2;
+
+        private bool IsDyeLikeMode => this.IsDyeMode || this.IsExactDyeMode;
+
+        private Program.RenderMode SelectedRenderMode => this.IsDyeMode
+            ? Program.RenderMode.DyeGrid
+            : this.IsExactDyeMode
+                ? Program.RenderMode.ExactDye
+                : Program.RenderMode.ActionStrip;
+
         private IReadOnlyList<string> SelectedNormalExportActions => Program.NormalizeNormalActionSelection(this.normalExportActions);
 
         private string SelectedDyeExportAction => Program.NormalizeDyeActionSelection(this.dyeExportAction);
+
+        private int SelectedDyePrismType => this.cboDyeColorType.SelectedItem is Program.PrismColorTypeDefinition colorType
+            ? colorType.Value
+            : 0;
 
         private const string SearchTargetName = "name";
 
@@ -447,6 +480,10 @@ namespace AvatarGifTool
             this.cboMode.Margin = new Padding(0);
             this.cboMode.MinimumSize = new Size(0, inputHeight);
             this.cboMode.IntegralHeight = false;
+            this.cboDyeColorType.Margin = new Padding(0, 0, 10, 0);
+            this.cboDyeColorType.MinimumSize = new Size(this.ScaleForLogicalPixels(150), inputHeight);
+            this.cboDyeColorType.Width = this.ScaleForLogicalPixels(150);
+            this.cboDyeColorType.IntegralHeight = false;
             this.cboSearchTarget.Margin = new Padding(8, 0, 0, 0);
             this.cboSearchTarget.MinimumSize = new Size(this.ScaleForLogicalPixels(132), inputHeight);
             this.cboSearchTarget.Width = this.ScaleForLogicalPixels(132);
@@ -476,6 +513,8 @@ namespace AvatarGifTool
             this.btnExport.Margin = new Padding(0);
             this.chkSearchAppearanceOnly.Margin = new Padding(12, 7, 0, 0);
 
+            this.nudDyeHue.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
+            this.nudDyeHue.Margin = new Padding(0, 0, 10, 0);
             this.nudDyeSaturation.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
             this.nudDyeSaturation.Margin = new Padding(0, 0, 10, 0);
             this.nudDyeBrightness.MinimumSize = new Size(this.ScaleForLogicalPixels(76), inputHeight);
@@ -658,6 +697,22 @@ namespace AvatarGifTool
             }
         }
 
+        private void SelectDyeColorType(int prismType)
+        {
+            prismType = Program.NormalizePrismType(prismType);
+            for (int i = 0; i < this.cboDyeColorType.Items.Count; i++)
+            {
+                if (this.cboDyeColorType.Items[i] is Program.PrismColorTypeDefinition colorType
+                    && colorType.Value == prismType)
+                {
+                    this.cboDyeColorType.SelectedIndex = i;
+                    return;
+                }
+            }
+
+            this.cboDyeColorType.SelectedIndex = 0;
+        }
+
         private string FormatColorHex(Color color)
         {
             return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
@@ -776,26 +831,32 @@ namespace AvatarGifTool
             this.paramsLayout.Controls.Add(this.lblGearCaption, 0, 3);
             this.paramsLayout.Controls.Add(this.pnlGear, 1, 3);
 
-            var dyeLayout = new TableLayoutPanel
+            this.dyeLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 3,
-                RowCount = 2,
+                RowCount = 4,
                 AutoSize = true,
                 Margin = new Padding(0),
             };
-            dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            dyeLayout.Controls.Add(new Label { Text = "饱和度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
-            dyeLayout.Controls.Add(this.nudDyeSaturation, 1, 0);
-            dyeLayout.Controls.Add(this.trkDyeSaturation, 2, 0);
-            dyeLayout.Controls.Add(new Label { Text = "亮度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 1);
-            dyeLayout.Controls.Add(this.nudDyeBrightness, 1, 1);
-            dyeLayout.Controls.Add(this.trkDyeBrightness, 2, 1);
-            this.pnlDyeAdjustments.Controls.Add(dyeLayout);
+            this.dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            this.dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            this.dyeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.dyeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.dyeLayout.Controls.Add(new Label { Text = "色系", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 0);
+            this.dyeLayout.Controls.Add(this.cboDyeColorType, 1, 0);
+            this.dyeLayout.Controls.Add(this.lblDyeHueCaption, 0, 1);
+            this.dyeLayout.Controls.Add(this.nudDyeHue, 1, 1);
+            this.dyeLayout.Controls.Add(new Label { Text = "饱和度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 2);
+            this.dyeLayout.Controls.Add(this.nudDyeSaturation, 1, 2);
+            this.dyeLayout.Controls.Add(this.trkDyeSaturation, 2, 2);
+            this.dyeLayout.Controls.Add(new Label { Text = "亮度", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 8, 0) }, 0, 3);
+            this.dyeLayout.Controls.Add(this.nudDyeBrightness, 1, 3);
+            this.dyeLayout.Controls.Add(this.trkDyeBrightness, 2, 3);
+            this.pnlDyeAdjustments.Controls.Add(this.dyeLayout);
             this.pnlDyeAdjustments.Margin = new Padding(0, 0, 0, 6);
             this.paramsLayout.Controls.Add(this.lblDyeAdjustmentsCaption, 0, 4);
             this.paramsLayout.Controls.Add(this.pnlDyeAdjustments, 1, 4);
@@ -1054,6 +1115,8 @@ namespace AvatarGifTool
             this.txtBaseWz.TextChanged += this.InputControlChanged;
             this.txtTemplate.TextChanged += this.InputControlChanged;
             this.txtGear.TextChanged += this.InputControlChanged;
+            this.cboDyeColorType.SelectedIndexChanged += this.DyeColorType_SelectedIndexChanged;
+            this.nudDyeHue.ValueChanged += this.NudDyeHue_ValueChanged;
             this.trkDyeSaturation.ValueChanged += this.DyeAdjustmentControl_ValueChanged;
             this.trkDyeBrightness.ValueChanged += this.DyeAdjustmentControl_ValueChanged;
             this.nudDyeSaturation.ValueChanged += this.NudDyeAdjustment_ValueChanged;
@@ -1262,21 +1325,31 @@ namespace AvatarGifTool
 
         private void UpdateModeUi()
         {
-            bool dyeMode = this.IsDyeMode;
+            bool dyeLikeMode = this.IsDyeLikeMode;
+            bool exactDyeMode = this.IsExactDyeMode;
 
-            this.lblGearCaption.Visible = dyeMode;
-            this.pnlGear.Visible = dyeMode;
-            this.lblDyeAdjustmentsCaption.Visible = dyeMode;
-            this.pnlDyeAdjustments.Visible = dyeMode;
-            this.txtGear.Enabled = dyeMode && !this.isBusy;
+            this.lblGearCaption.Visible = dyeLikeMode;
+            this.pnlGear.Visible = dyeLikeMode;
+            this.lblDyeAdjustmentsCaption.Visible = dyeLikeMode;
+            this.pnlDyeAdjustments.Visible = dyeLikeMode;
+            this.lblDyeHueCaption.Visible = exactDyeMode;
+            this.nudDyeHue.Visible = exactDyeMode;
+            this.txtGear.Enabled = dyeLikeMode && !this.isBusy;
 
             if (this.paramsLayout != null && this.paramsLayout.RowStyles.Count > ParamsDyeRowIndex)
             {
-                this.paramsLayout.RowStyles[ParamsGearRowIndex].SizeType = dyeMode ? SizeType.AutoSize : SizeType.Absolute;
-                this.paramsLayout.RowStyles[ParamsGearRowIndex].Height = dyeMode ? 0f : 0f;
-                this.paramsLayout.RowStyles[ParamsDyeRowIndex].SizeType = dyeMode ? SizeType.AutoSize : SizeType.Absolute;
-                this.paramsLayout.RowStyles[ParamsDyeRowIndex].Height = dyeMode ? 0f : 0f;
+                this.paramsLayout.RowStyles[ParamsGearRowIndex].SizeType = dyeLikeMode ? SizeType.AutoSize : SizeType.Absolute;
+                this.paramsLayout.RowStyles[ParamsGearRowIndex].Height = dyeLikeMode ? 0f : 0f;
+                this.paramsLayout.RowStyles[ParamsDyeRowIndex].SizeType = dyeLikeMode ? SizeType.AutoSize : SizeType.Absolute;
+                this.paramsLayout.RowStyles[ParamsDyeRowIndex].Height = dyeLikeMode ? 0f : 0f;
                 this.paramsLayout.PerformLayout();
+            }
+
+            if (this.dyeLayout != null && this.dyeLayout.RowStyles.Count > 1)
+            {
+                this.dyeLayout.RowStyles[1].SizeType = exactDyeMode ? SizeType.AutoSize : SizeType.Absolute;
+                this.dyeLayout.RowStyles[1].Height = exactDyeMode ? 0f : 0f;
+                this.dyeLayout.PerformLayout();
             }
 
             this.rootLayout?.PerformLayout();
@@ -1295,6 +1368,18 @@ namespace AvatarGifTool
         private void MainForm_ResizeEnd(object sender, EventArgs e)
         {
             this.SaveConfig();
+        }
+
+        private void DyeColorType_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            this.SaveConfig();
+            this.MarkPreviewDirty();
+        }
+
+        private void NudDyeHue_ValueChanged(object sender, EventArgs e)
+        {
+            this.SaveConfig();
+            this.MarkPreviewDirty();
         }
 
         private void DyeAdjustmentControl_ValueChanged(object sender, EventArgs e)
@@ -1495,7 +1580,7 @@ namespace AvatarGifTool
                 string template = this.BuildTemplateIdText();
                 string gearText = this.BuildGearIdText();
                 ResolvedAppearancePreview preview = await Task.Run(() =>
-                    this.metadataResolver.Resolve(baseWzPath, template, gearText, this.IsDyeMode, this.SelectedNormalExportActions, this.SelectedDyeExportAction));
+                    this.metadataResolver.Resolve(baseWzPath, template, gearText, this.SelectedRenderMode, this.SelectedNormalExportActions, this.SelectedDyeExportAction));
 
                 if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
                 {
@@ -1548,7 +1633,7 @@ namespace AvatarGifTool
                 string gearText = this.BuildGearIdText();
 
                 ResolvedAppearancePreview preview = await Task.Run(() =>
-                    this.metadataResolver.Resolve(baseWzPath, template, gearText, this.IsDyeMode, this.SelectedNormalExportActions, this.SelectedDyeExportAction));
+                    this.metadataResolver.Resolve(baseWzPath, template, gearText, this.SelectedRenderMode, this.SelectedNormalExportActions, this.SelectedDyeExportAction));
 
                 this.txtPreview.Text = preview.PreviewText;
                 this.RememberTemplateHistory(preview);
@@ -1562,8 +1647,10 @@ namespace AvatarGifTool
                     baseWzPath,
                     template,
                     preview.OutputPath,
-                    this.IsDyeMode,
+                    this.SelectedRenderMode,
                     gearText,
+                    prismType: this.SelectedDyePrismType,
+                    hue: (int)this.nudDyeHue.Value,
                     saturationOffset: this.trkDyeSaturation.Value,
                     brightnessOffset: this.trkDyeBrightness.Value,
                     backgroundColor: this.currentBackgroundColor,
@@ -1993,7 +2080,7 @@ namespace AvatarGifTool
 
         private string BuildGearIdText()
         {
-            if (!this.IsDyeMode)
+            if (!this.IsDyeLikeMode)
             {
                 return null;
             }
@@ -2278,11 +2365,13 @@ namespace AvatarGifTool
             this.txtBaseWz.Enabled = false;
             this.txtTemplate.Enabled = controlsEnabled;
             this.cboMode.Enabled = controlsEnabled;
-            this.txtGear.Enabled = controlsEnabled && this.IsDyeMode;
-            this.trkDyeSaturation.Enabled = controlsEnabled && this.IsDyeMode;
-            this.trkDyeBrightness.Enabled = controlsEnabled && this.IsDyeMode;
-            this.nudDyeSaturation.Enabled = controlsEnabled && this.IsDyeMode;
-            this.nudDyeBrightness.Enabled = controlsEnabled && this.IsDyeMode;
+            this.txtGear.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.cboDyeColorType.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.nudDyeHue.Enabled = controlsEnabled && this.IsExactDyeMode;
+            this.trkDyeSaturation.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.trkDyeBrightness.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.nudDyeSaturation.Enabled = controlsEnabled && this.IsDyeLikeMode;
+            this.nudDyeBrightness.Enabled = controlsEnabled && this.IsDyeLikeMode;
             this.btnBrowseBase.Enabled = controlsEnabled && this.baseLoadState != BaseLoadState.Loading;
             this.btnPickBackgroundColor.Enabled = controlsEnabled;
             this.btnResetBackgroundColor.Enabled = controlsEnabled;
@@ -2354,6 +2443,8 @@ namespace AvatarGifTool
             this.config.WindowHeight = Math.Max(this.MinimumSize.Height, size.Height);
             this.config.DyeSaturationOffset = this.ClampAdjustmentValue(this.trkDyeSaturation.Value);
             this.config.DyeBrightnessOffset = this.ClampAdjustmentValue(this.trkDyeBrightness.Value);
+            this.config.DyePrismType = this.SelectedDyePrismType;
+            this.config.DyeHue = (int)this.nudDyeHue.Value;
             this.config.BackgroundColorArgb = this.currentBackgroundColor.ToArgb();
             this.config.BackgroundImagePath = this.currentBackgroundImagePath;
             this.config.SearchAppearanceOnly = this.chkSearchAppearanceOnly.Checked;
@@ -2482,12 +2573,14 @@ namespace AvatarGifTool
             string baseWzPath,
             string templateText,
             string gearText,
-            bool dyeMode,
+            Program.RenderMode renderMode,
             IEnumerable<string> normalActions,
             string dyeAction)
         {
             this.EnsureLoaded(baseWzPath);
 
+            bool dyeGridMode = renderMode == Program.RenderMode.DyeGrid;
+            bool dyeLikeMode = renderMode == Program.RenderMode.DyeGrid || renderMode == Program.RenderMode.ExactDye;
             Program.TemplateAnalysis analysis = Program.AnalyzeTemplate(templateText, this.ClassifyAppearanceId);
             string[] selectedNormalActions = Program.NormalizeNormalActionSelection(normalActions);
             string selectedDyeAction = Program.NormalizeDyeActionSelection(dyeAction);
@@ -2505,7 +2598,7 @@ namespace AvatarGifTool
 
             string dyeTargetText = null;
             bool canExport = false;
-            string exportBlockReason = this.BuildExportBlockReason(analysis, gearIds, dyeMode);
+            string exportBlockReason = this.BuildExportBlockReason(analysis, gearIds, renderMode);
             List<ResolvedAppearanceEntry> effectiveEntries = null;
             int? resolvedSkinId = analysis.Skin ?? (usingDefaultSkin ? defaultSkinId : null);
             int? resolvedFaceId = analysis.Face;
@@ -2527,7 +2620,7 @@ namespace AvatarGifTool
 
                 foreach (Program.EffectiveGear gear in effective.Gears)
                 {
-                    bool isDyeTarget = dyeMode && dyeGearIdSet.Contains(gear.Id);
+                    bool isDyeTarget = dyeLikeMode && dyeGearIdSet.Contains(gear.Id);
                     effectiveEntries.Add(new ResolvedAppearanceEntry(
                         isDyeTarget ? $"{gear.SlotLabel} [染色]" : gear.SlotLabel,
                         this.ResolveDisplayName(gear.Id, Program.AppearanceIdKind.Gear),
@@ -2537,7 +2630,7 @@ namespace AvatarGifTool
                 canExport = true;
             }
 
-            if (dyeMode && gearIds.Length > 0)
+            if (dyeLikeMode && gearIds.Length > 0)
             {
                 dyeTargetText = string.Join(" / ", gearIds.Select(id =>
                 {
@@ -2547,18 +2640,18 @@ namespace AvatarGifTool
                         : $"{this.GetKindLabel(id, kind)} - {this.ResolveDisplayName(id, kind)}";
                 }));
             }
-            else if (dyeMode)
+            else if (dyeLikeMode)
             {
                 dyeTargetText = "未填写";
             }
 
             IReadOnlyList<ResolvedAppearanceEntry> fileNameEntries = (IReadOnlyList<ResolvedAppearanceEntry>) (effectiveEntries ?? templateEntries);
-            string[] selectedActionsForFileName = dyeMode
+            string[] selectedActionsForFileName = dyeGridMode
                 ? new[] { selectedDyeAction }
                 : selectedNormalActions;
             string fileBaseName = BuildFileBaseName(
                 fileNameEntries.Where(entry => entry.Id.HasValue).Select(entry => entry.Name),
-                dyeMode,
+                renderMode,
                 selectedActionsForFileName);
             string outputPath = Path.Combine(AppContext.BaseDirectory, fileBaseName + ".gif");
 
@@ -2589,7 +2682,7 @@ namespace AvatarGifTool
                 lines.Add($"当前状态: {exportBlockReason}");
             }
 
-            if (dyeMode)
+            if (dyeLikeMode)
             {
                 lines.Add($"染色对象: {dyeTargetText}");
             }
@@ -3295,9 +3388,10 @@ namespace AvatarGifTool
             }
         }
 
-        private string BuildExportBlockReason(Program.TemplateAnalysis analysis, IReadOnlyList<int> gearIds, bool dyeMode)
+        private string BuildExportBlockReason(Program.TemplateAnalysis analysis, IReadOnlyList<int> gearIds, Program.RenderMode renderMode)
         {
             var reasons = new List<string>();
+            bool dyeLikeMode = renderMode == Program.RenderMode.DyeGrid || renderMode == Program.RenderMode.ExactDye;
 
             int[] unknownIds = analysis.Items
                 .Where(item => item.Kind == Program.AppearanceIdKind.Unknown)
@@ -3327,7 +3421,7 @@ namespace AvatarGifTool
                 reasons.Add($"缺少 {string.Join(" / ", missingKinds)} ID");
             }
 
-            if (dyeMode)
+            if (dyeLikeMode)
             {
                 if (gearIds == null || gearIds.Count == 0)
                 {
@@ -3734,14 +3828,14 @@ namespace AvatarGifTool
             return Program.ParseIdList(gearText, "Gear");
         }
 
-        private static string BuildFileBaseName(IEnumerable<string> names, bool dyeMode, IEnumerable<string> actionNames)
+        private static string BuildFileBaseName(IEnumerable<string> names, Program.RenderMode renderMode, IEnumerable<string> actionNames)
         {
             var parts = names
                 .Select(SanitizeFileNamePart)
                 .Where(part => !string.IsNullOrWhiteSpace(part))
                 .ToList();
 
-            parts.Add(dyeMode ? "染色模式" : "普通模式");
+            parts.Add(GetRenderModeFileNamePart(renderMode));
             parts.AddRange((actionNames ?? Enumerable.Empty<string>())
                 .Select(SanitizeFileNamePart)
                 .Where(part => !string.IsNullOrWhiteSpace(part)));
@@ -3752,6 +3846,16 @@ namespace AvatarGifTool
             }
 
             return string.Join("_", parts);
+        }
+
+        private static string GetRenderModeFileNamePart(Program.RenderMode renderMode)
+        {
+            return renderMode switch
+            {
+                Program.RenderMode.DyeGrid => "染色模式",
+                Program.RenderMode.ExactDye => "精确染色模式",
+                _ => "普通模式",
+            };
         }
 
         private static string SanitizeFileNamePart(string text)

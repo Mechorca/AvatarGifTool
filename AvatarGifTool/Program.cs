@@ -39,8 +39,33 @@ namespace AvatarGifTool
             (99, -99, "sat+99_bri-99"),
             (99, 99, "sat+99_bri+99"),
         };
+        private static readonly PrismColorTypeDefinition[] PrismColorTypeDefinitions = new[]
+        {
+            new PrismColorTypeDefinition(0, "整体色系", "全色系", "overall", "all"),
+            new PrismColorTypeDefinition(1, "红色系", "red"),
+            new PrismColorTypeDefinition(2, "黄色系", "yellow"),
+            new PrismColorTypeDefinition(3, "绿色系", "green"),
+            new PrismColorTypeDefinition(4, "祖母绿色系", "emerald"),
+            new PrismColorTypeDefinition(5, "青色系", "cyan", "blue"),
+            new PrismColorTypeDefinition(6, "紫色系", "purple"),
+        };
 
         internal static IReadOnlyList<string> SupportedExportActions => ActionStripActions;
+
+        internal static IReadOnlyList<PrismColorTypeDefinition> SupportedPrismColorTypes => PrismColorTypeDefinitions;
+
+        internal static int NormalizePrismType(int prismType)
+        {
+            return PrismColorTypeDefinitions.Any(type => type.Value == prismType)
+                ? prismType
+                : 0;
+        }
+
+        internal static string GetPrismTypeName(int prismType)
+        {
+            return PrismColorTypeDefinitions.FirstOrDefault(type => type.Value == prismType)?.Name
+                ?? PrismColorTypeDefinitions[0].Name;
+        }
 
         internal static string[] NormalizeNormalActionSelection(IEnumerable<string> selectedActions)
         {
@@ -172,14 +197,17 @@ namespace AvatarGifTool
 
             avatar.ReloadEffects();
 
-            if (options.Mode == RenderMode.DyeGrid && dyeTargetParts.Count == 0)
+            if (RequiresDyeTarget(options.Mode) && dyeTargetParts.Count == 0)
             {
                 throw new InvalidOperationException("dye mode requires a gear ID.");
             }
 
-            List<RenderTrack> tracks = options.Mode == RenderMode.DyeGrid
-                ? RenderDyeTracks(avatar, dyeTargetParts, options)
-                : RenderActionTracks(avatar, options.NormalActions);
+            List<RenderTrack> tracks = options.Mode switch
+            {
+                RenderMode.DyeGrid => RenderDyeTracks(avatar, dyeTargetParts, options),
+                RenderMode.ExactDye => RenderExactDyeTracks(avatar, dyeTargetParts, options),
+                _ => RenderActionTracks(avatar, options.NormalActions),
+            };
 
             try
             {
@@ -246,6 +274,27 @@ namespace AvatarGifTool
             ApplyPrism(targetParts, options.PrismType, 0, 100, 100);
             avatar.ClearSkinCache();
             return tracks;
+        }
+
+        private static List<RenderTrack> RenderExactDyeTracks(AvatarBuilder avatar, IReadOnlyList<AvatarPart> targetParts, CommandOptions options)
+        {
+            ApplyPrism(
+                targetParts,
+                options.PrismType,
+                options.Hue,
+                ClampPrismValue(100 + options.SaturationOffset),
+                ClampPrismValue(100 + options.BrightnessOffset));
+            avatar.ClearSkinCache();
+
+            try
+            {
+                return RenderActionTracks(avatar, options.NormalActions);
+            }
+            finally
+            {
+                ApplyPrism(targetParts, options.PrismType, 0, 100, 100);
+                avatar.ClearSkinCache();
+            }
         }
 
         private static int ClampPrismValue(int value)
@@ -555,6 +604,11 @@ namespace AvatarGifTool
             return (int)Math.Ceiling(Math.Sqrt(trackCount));
         }
 
+        private static bool RequiresDyeTarget(RenderMode mode)
+        {
+            return mode == RenderMode.DyeGrid || mode == RenderMode.ExactDye;
+        }
+
         private static Image LoadBackgroundImage(string backgroundImagePath)
         {
             if (string.IsNullOrWhiteSpace(backgroundImagePath))
@@ -698,17 +752,19 @@ namespace AvatarGifTool
                 "",
                 "Usage:",
                 "  AvatarGifTool.exe --base-wz <Base.wz> --template <appearanceIds...>",
-                "                    --output <file.gif> [--mode normal|dye] [--gear <gearIds...>]",
+                "                    --output <file.gif> [--mode normal|dye|exact] [--gear <gearIds...>]",
                 "",
                 "Options:",
                 "  --base-wz        Base.wz full path.",
                 "  --template       Comma-separated appearance IDs. Skin, face and hair are auto-detected.",
                 "  --gear           Optional extra appearance IDs, comma-separated. In dye mode it is required and all IDs will be dyed together.",
                 "  --output         Output GIF path.",
-                "  --mode           normal or dye. Default: normal.",
+                "  --mode           normal, dye or exact. Default: normal.",
                 "  --dye            Same as --mode dye.",
+                "  --exact-dye      Same as --mode exact.",
                 "  --hue-step       Default 30.",
-                "  --prism-type     Default 0.",
+                "  --prism-type     Color type, default 0 / 整体色系. Supports 0..6 or Chinese names.",
+                "  --hue            Exact dye hue, default 0, range 0..359.",
                 "  --saturation     Saturation offset, default 0, range -99..99.",
                 "  --brightness     Brightness offset, default 0, range -99..99.",
                 "  --bg-color       Background color, default #FFFFFF. Supports transparent / #RRGGBB / #AARRGGBB.",
@@ -722,11 +778,47 @@ namespace AvatarGifTool
                 "  AvatarGifTool.exe --base-wz D:\\Maple\\Base.wz --template 1051001,30000,2000,1072153,20000 --output D:\\out\\avatar.gif",
                 "  AvatarGifTool.exe --base-wz D:\\Maple\\Base.wz --template 1051001,30000,2000,1072153,20000 --gear 1702000,1082102 --output D:\\out\\weapon.gif",
                 "  AvatarGifTool.exe --base-wz D:\\Maple\\Base.wz --template 1051001,30000,2000,20000 --gear 1053345,1072153 --output D:\\out\\dye.gif --dye --saturation 12 --brightness -6 --bg-color transparent",
+                "  AvatarGifTool.exe --base-wz D:\\Maple\\Base.wz --template 1051001,30000,2000,20000 --gear 1053345 --output D:\\out\\exact.gif --mode exact --prism-type 红色系 --hue 30 --saturation 20 --brightness -10",
                 "",
                 "Notes:",
                 "  normal mode defaults to stand1, swingO1, swingO2, shoot1, jump, walk1 and auto-arranges near square.",
                 "  dye mode defaults to stand1, gear is required, hue 0..330 with step 30 by default, arranged as 3 hue columns plus one saturation/brightness extreme column.",
+                "  exact dye mode uses the normal-mode action list and applies one manually specified dye setting.",
             });
+        }
+
+        internal sealed class PrismColorTypeDefinition
+        {
+            private readonly string[] aliases;
+
+            public PrismColorTypeDefinition(int value, string name, params string[] aliases)
+            {
+                this.Value = value;
+                this.Name = name;
+                this.aliases = aliases ?? Array.Empty<string>();
+            }
+
+            public int Value { get; }
+
+            public string Name { get; }
+
+            public bool Matches(string text)
+            {
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return false;
+                }
+
+                string trimmed = text.Trim();
+                return string.Equals(this.Value.ToString(), trimmed, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(this.Name, trimmed, StringComparison.OrdinalIgnoreCase)
+                    || this.aliases.Any(alias => string.Equals(alias, trimmed, StringComparison.OrdinalIgnoreCase));
+            }
+
+            public override string ToString()
+            {
+                return this.Name;
+            }
         }
 
         internal sealed class CommandOptions
@@ -738,6 +830,7 @@ namespace AvatarGifTool
             public RenderMode Mode { get; private set; }
             public int HueStep { get; private set; }
             public int PrismType { get; private set; }
+            public int Hue { get; private set; }
             public int SaturationOffset { get; private set; }
             public int BrightnessOffset { get; private set; }
             public Color BackgroundColor { get; private set; }
@@ -751,10 +844,11 @@ namespace AvatarGifTool
                 string baseWzPath,
                 string template,
                 string outputPath,
-                bool dyeMode,
+                RenderMode mode,
                 string gearText = null,
                 int hueStep = 30,
                 int prismType = 0,
+                int hue = 0,
                 int saturationOffset = 0,
                 int brightnessOffset = 0,
                 Color? backgroundColor = null,
@@ -770,9 +864,10 @@ namespace AvatarGifTool
                     Template = template?.Trim(),
                     GearIds = ParseOptionalIntList(gearText, "gear"),
                     OutputPath = outputPath?.Trim(),
-                    Mode = dyeMode ? RenderMode.DyeGrid : RenderMode.ActionStrip,
+                    Mode = mode,
                     HueStep = hueStep,
-                    PrismType = prismType,
+                    PrismType = NormalizePrismType(prismType),
+                    Hue = hue,
                     SaturationOffset = saturationOffset,
                     BrightnessOffset = brightnessOffset,
                     BackgroundColor = backgroundColor ?? Color.White,
@@ -791,6 +886,7 @@ namespace AvatarGifTool
             {
                 var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 bool dyeFlag = false;
+                bool exactDyeFlag = false;
 
                 for (int i = 0; i < args.Length; i++)
                 {
@@ -798,6 +894,12 @@ namespace AvatarGifTool
                     if (string.Equals(arg, "--dye", StringComparison.OrdinalIgnoreCase))
                     {
                         dyeFlag = true;
+                        continue;
+                    }
+                    if (string.Equals(arg, "--exact-dye", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(arg, "--precise-dye", StringComparison.OrdinalIgnoreCase))
+                    {
+                        exactDyeFlag = true;
                         continue;
                     }
 
@@ -835,9 +937,10 @@ namespace AvatarGifTool
                     Template = GetRequired(values, "template"),
                     GearIds = ParseOptionalIntList(GetOptional(values, "gear", null), "gear"),
                     OutputPath = GetRequired(values, "output"),
-                    Mode = dyeFlag ? RenderMode.DyeGrid : ParseMode(GetOptional(values, "mode", "normal")),
+                    Mode = exactDyeFlag ? RenderMode.ExactDye : dyeFlag ? RenderMode.DyeGrid : ParseMode(GetOptional(values, "mode", "normal")),
                     HueStep = ParseInt(GetOptional(values, "hue-step", "30"), "hue-step"),
-                    PrismType = ParseInt(GetOptional(values, "prism-type", "0"), "prism-type"),
+                    PrismType = ParsePrismType(GetOptional(values, "prism-type", "0"), "prism-type"),
+                    Hue = ParseInt(GetOptional(values, "hue", "0"), "hue"),
                     SaturationOffset = ParseInt(GetOptional(values, "saturation", "0"), "saturation"),
                     BrightnessOffset = ParseInt(GetOptional(values, "brightness", "0"), "brightness"),
                     BackgroundColor = ParseColor(GetOptional(values, "bg-color", "#FFFFFF"), "bg-color"),
@@ -878,7 +981,7 @@ namespace AvatarGifTool
                     throw new ArgumentOutOfRangeException(nameof(this.GearIds), "gear must contain positive integers.");
                 }
 
-                if (this.Mode == RenderMode.DyeGrid && this.GearIds.Length == 0)
+                if (RequiresDyeTarget(this.Mode) && this.GearIds.Length == 0)
                 {
                     throw new ArgumentException("gear is required in dye mode.");
                 }
@@ -886,6 +989,16 @@ namespace AvatarGifTool
                 if (this.HueStep <= 0 || this.HueStep > 360)
                 {
                     throw new ArgumentOutOfRangeException(nameof(this.HueStep), "hue-step must be between 1 and 360.");
+                }
+
+                if (!PrismColorTypeDefinitions.Any(type => type.Value == this.PrismType))
+                {
+                    throw new ArgumentOutOfRangeException(nameof(this.PrismType), "prism-type must be between 0 and 6.");
+                }
+
+                if (this.Hue < 0 || this.Hue > 359)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(this.Hue), "hue must be between 0 and 359.");
                 }
 
                 if (this.SaturationOffset < -99 || this.SaturationOffset > 99)
@@ -994,6 +1107,22 @@ namespace AvatarGifTool
                 return result;
             }
 
+            private static int ParsePrismType(string value, string key)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    throw new ArgumentException($"Argument '{key}' must not be empty.");
+                }
+
+                PrismColorTypeDefinition colorType = PrismColorTypeDefinitions.FirstOrDefault(type => type.Matches(value));
+                if (colorType == null)
+                {
+                    throw new ArgumentException($"Argument '{key}' must be 0..6 or one of: {string.Join(", ", PrismColorTypeDefinitions.Select(type => type.Name))}.");
+                }
+
+                return colorType.Value;
+            }
+
             private static Color ParseColor(string value, string key)
             {
                 if (string.IsNullOrWhiteSpace(value))
@@ -1041,6 +1170,12 @@ namespace AvatarGifTool
                     case "dye":
                     case "grid":
                         return RenderMode.DyeGrid;
+
+                    case "exact":
+                    case "precise":
+                    case "exact-dye":
+                    case "precise-dye":
+                        return RenderMode.ExactDye;
 
                     default:
                         throw new ArgumentException($"Unknown mode: {mode}");
@@ -2158,6 +2293,7 @@ namespace AvatarGifTool
         {
             ActionStrip = 0,
             DyeGrid = 1,
+            ExactDye = 2,
         }
     }
 }

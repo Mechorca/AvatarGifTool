@@ -13,6 +13,12 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.18.0
+
+- 染色模式新增 `色系` 选项，可选择整体、红、黄、绿、祖母绿、青、紫等与原项目 Prism 逻辑一致的色系范围。
+- 新增 `精确染色模式`，可手动指定色系、颜色、饱和度和亮度，并使用普通模式的动作选择与拼图布局。
+- CLI 新增 `--mode exact` / `--exact-dye`、`--hue`，`--prism-type` 支持数字或中文色系名。
+
 ### 2.17.0
 
 - ID 搜索结果新增 `道具说明` 列。
