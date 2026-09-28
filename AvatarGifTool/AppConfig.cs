@@ -25,6 +25,7 @@ namespace AvatarGifTool
         public string SearchTarget { get; set; } = "name";
         public List<string> NormalExportActions { get; set; } = new List<string>();
         public string DyeExportAction { get; set; }
+        public string PreviewAction { get; set; } = "stand1";
         public List<TemplateHistoryItem> TemplateHistory { get; set; } = new List<TemplateHistoryItem>();
     }
 

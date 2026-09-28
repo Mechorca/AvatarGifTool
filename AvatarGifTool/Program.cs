@@ -103,6 +103,21 @@ namespace AvatarGifTool
             return ActionStripActions[0];
         }
 
+        internal static string NormalizePreviewAction(string selectedAction)
+        {
+            if (!string.IsNullOrWhiteSpace(selectedAction))
+            {
+                string matchedAction = ActionStripActions.FirstOrDefault(action =>
+                    string.Equals(action, selectedAction.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (matchedAction != null)
+                {
+                    return matchedAction;
+                }
+            }
+
+            return ActionStripActions[0];
+        }
+
         internal static string[] ParseActionList(string value, string fieldName)
         {
             string[] actions = Regex.Matches(value ?? string.Empty, @"[A-Za-z0-9]+")
@@ -175,6 +190,41 @@ namespace AvatarGifTool
             int saturationOffset,
             int brightnessOffset)
         {
+            using PreviewFrameSet frameSet = RenderPreviewStand1Frames(
+                templateText,
+                gearText,
+                "stand1",
+                renderMode,
+                hairMixColor,
+                hairMixOpacity,
+                faceMixColor,
+                faceMixOpacity,
+                prismType,
+                hue,
+                saturationOffset,
+                brightnessOffset);
+            if (frameSet == null || frameSet.Count == 0)
+            {
+                return null;
+            }
+
+            return new Bitmap(frameSet.Frames[0]);
+        }
+
+        internal static PreviewFrameSet RenderPreviewStand1Frames(
+            string templateText,
+            string gearText,
+            string actionName,
+            RenderMode renderMode,
+            int hairMixColor,
+            int hairMixOpacity,
+            int faceMixColor,
+            int faceMixOpacity,
+            int prismType,
+            int hue,
+            int saturationOffset,
+            int brightnessOffset)
+        {
             AvatarTemplate template = AvatarTemplate.Parse(templateText, DetectAppearanceIdKind);
             int[] gearIds = string.IsNullOrWhiteSpace(gearText)
                 ? Array.Empty<int>()
@@ -228,14 +278,27 @@ namespace AvatarGifTool
             }
 
             avatar.ClearSkinCache();
+            string selectedAction = NormalizePreviewAction(actionName);
             string emotion = avatar.GetStandardEmotion();
-            using RenderTrack track = RenderSingleTrack(avatar, "stand1", emotion, "stand1");
+            using RenderTrack track = RenderSingleTrack(avatar, selectedAction, emotion, selectedAction);
             if (track == null || track.Frames.Count == 0)
             {
                 return null;
             }
 
-            return new Bitmap(track.Frames[0].Bitmap);
+            var frameSet = new PreviewFrameSet();
+            foreach (RenderFrame frame in track.Frames)
+            {
+                if (frame?.Bitmap == null)
+                {
+                    continue;
+                }
+
+                frameSet.Frames.Add(new Bitmap(frame.Bitmap));
+                frameSet.Delays.Add(Math.Max(10, frame.Delay));
+            }
+
+            return frameSet;
         }
 
         private static void Run(CommandOptions options, bool manageWzContext)
@@ -2445,6 +2508,26 @@ namespace AvatarGifTool
 
                 e.WzNode = null;
                 e.WzFile = null;
+            }
+        }
+
+        internal sealed class PreviewFrameSet : IDisposable
+        {
+            public List<Bitmap> Frames { get; } = new List<Bitmap>();
+
+            public List<int> Delays { get; } = new List<int>();
+
+            public int Count => this.Frames.Count;
+
+            public void Dispose()
+            {
+                foreach (Bitmap bitmap in this.Frames)
+                {
+                    bitmap?.Dispose();
+                }
+
+                this.Frames.Clear();
+                this.Delays.Clear();
             }
         }
 

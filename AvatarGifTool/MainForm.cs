@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -92,6 +93,7 @@ namespace AvatarGifTool
         private TableLayoutPanel dyeLayout;
         private readonly System.Windows.Forms.Timer previewTimer;
         private readonly System.Windows.Forms.Timer previewImageTimer;
+        private readonly System.Windows.Forms.Timer previewFrameTimer;
         private readonly ColorDialog backgroundColorDialog;
         private readonly MetadataResolver metadataResolver;
         private readonly AppConfigStore configStore;
@@ -103,17 +105,20 @@ namespace AvatarGifTool
         private readonly Dictionary<string, int> gearDisplayIdMap;
         private string[] normalExportActions;
         private string dyeExportAction;
+        private string previewAction;
         private List<AppearanceSearchResult> searchResults;
         private bool isBusy;
         private bool isSearching;
         private bool startupConfigApplied;
         private int previewVersion;
+        private int previewFrameIndex;
         private int currentSearchPage;
         private BaseLoadState baseLoadState;
         private bool syncingDyeAdjustmentInputs;
         private Color currentBackgroundColor;
         private Color lastOpaqueBackgroundColor;
         private string currentBackgroundImagePath;
+        private Program.PreviewFrameSet previewFrameSet;
 
         public MainForm()
         {
@@ -130,6 +135,8 @@ namespace AvatarGifTool
             this.previewTimer.Tick += this.PreviewTimer_Tick;
             this.previewImageTimer = new System.Windows.Forms.Timer { Interval = 350 };
             this.previewImageTimer.Tick += this.PreviewImageTimer_Tick;
+            this.previewFrameTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            this.previewFrameTimer.Tick += this.PreviewFrameTimer_Tick;
             this.backgroundPaletteButtons = new List<Button>();
             this.historyButtons = new List<HistoryTemplateButton>();
             this.searchResults = new List<AppearanceSearchResult>();
@@ -139,6 +146,7 @@ namespace AvatarGifTool
             this.gearDisplayIdMap = new Dictionary<string, int>(StringComparer.Ordinal);
             this.normalExportActions = Program.NormalizeNormalActionSelection(this.config.NormalExportActions);
             this.dyeExportAction = Program.NormalizeDyeActionSelection(this.config.DyeExportAction);
+            this.previewAction = Program.NormalizePreviewAction(this.config.PreviewAction);
 
             this.txtBaseWz = new TextBox { Dock = DockStyle.Fill };
             this.txtTemplate = new AlignedInputBox
@@ -227,7 +235,7 @@ namespace AvatarGifTool
             this.btnClearBackgroundImage = new Button { Text = "清除图片", AutoSize = true };
             this.chkTransparentBackground = new CheckBox { Text = "透明背景", AutoSize = true, Margin = new Padding(10, 7, 0, 0) };
             this.btnValidatePreview = new Button { Text = "校验", AutoSize = true };
-            this.btnExportSettings = new Button { Text = "导出设置", AutoSize = true };
+            this.btnExportSettings = new Button { Text = "设置", AutoSize = true };
             this.btnExport = new Button { Text = "导出", AutoSize = true };
             this.btnSearch = new Button { Text = "搜索", AutoSize = true };
             this.btnPrevPage = new Button { Text = "上一页", AutoSize = true };
@@ -364,6 +372,10 @@ namespace AvatarGifTool
             this.previewTimer.Dispose();
             this.previewImageTimer.Stop();
             this.previewImageTimer.Dispose();
+            this.previewFrameTimer.Stop();
+            this.previewFrameTimer.Dispose();
+            this.previewFrameSet?.Dispose();
+            this.previewFrameSet = null;
             this.CloseSearchPreviewTooltip();
             this.metadataResolver.Dispose();
             base.OnFormClosed(e);
@@ -395,6 +407,8 @@ namespace AvatarGifTool
         private IReadOnlyList<string> SelectedNormalExportActions => Program.NormalizeNormalActionSelection(this.normalExportActions);
 
         private string SelectedDyeExportAction => Program.NormalizeDyeActionSelection(this.dyeExportAction);
+
+        private string SelectedPreviewAction => Program.NormalizePreviewAction(this.previewAction);
 
         private int SelectedDyePrismType => this.cboDyeColorType.SelectedItem is Program.PrismColorTypeDefinition colorType
             ? colorType.Value
@@ -940,7 +954,7 @@ namespace AvatarGifTool
 
             var paramsGroup = new GroupBox
             {
-                Text = "参数",
+                Text = string.Empty,
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -956,11 +970,12 @@ namespace AvatarGifTool
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                ColumnCount = 2,
+                ColumnCount = 3,
                 RowCount = 9,
                 Padding = new Padding(12, 8, 12, 8),
                 Margin = new Padding(0),
             };
+            this.paramsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, this.ScaleForLogicalPixels(214)));
             this.paramsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             this.paramsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             for (int i = 0; i < 9; i++)
@@ -992,8 +1007,8 @@ namespace AvatarGifTool
                 Text = "需要点选游戏目录下Data/Base/Base.wz",
             }, 2, 0);
 
-            this.paramsLayout.Controls.Add(new Label { Text = "Base 文件", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 0);
-            this.paramsLayout.Controls.Add(baseRow, 1, 0);
+            this.paramsLayout.Controls.Add(new Label { Text = "Base 文件", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 1, 0);
+            this.paramsLayout.Controls.Add(baseRow, 2, 0);
 
             var templateInputRow = new TableLayoutPanel
             {
@@ -1008,12 +1023,12 @@ namespace AvatarGifTool
             templateInputRow.Controls.Add(this.txtTemplate, 0, 0);
             templateInputRow.Controls.Add(this.btnValidatePreview, 1, 0);
 
-            this.paramsLayout.Controls.Add(new Label { Text = "模板", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) }, 0, 1);
-            this.paramsLayout.Controls.Add(templateInputRow, 1, 1);
+            this.paramsLayout.Controls.Add(new Label { Text = "模板", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) }, 1, 1);
+            this.paramsLayout.Controls.Add(templateInputRow, 2, 1);
 
             this.cboMode.Margin = new Padding(0, 0, 0, 6);
-            this.paramsLayout.Controls.Add(new Label { Text = "模式", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) }, 0, 2);
-            this.paramsLayout.Controls.Add(this.cboMode, 1, 2);
+            this.paramsLayout.Controls.Add(new Label { Text = "模式", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 4) }, 1, 2);
+            this.paramsLayout.Controls.Add(this.cboMode, 2, 2);
 
             var gearLayout = new TableLayoutPanel
             {
@@ -1029,8 +1044,8 @@ namespace AvatarGifTool
             gearLayout.Controls.Add(new Label { Text = "染色时必填", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 0, 0) }, 1, 0);
             this.pnlGear.Controls.Add(gearLayout);
             this.pnlGear.Margin = new Padding(0, 0, 0, 6);
-            this.paramsLayout.Controls.Add(this.lblGearCaption, 0, 3);
-            this.paramsLayout.Controls.Add(this.pnlGear, 1, 3);
+            this.paramsLayout.Controls.Add(this.lblGearCaption, 1, 3);
+            this.paramsLayout.Controls.Add(this.pnlGear, 2, 3);
 
             int dyeRowGap = this.ScaleForLogicalPixels(6);
             this.dyeLayout = new TableLayoutPanel
@@ -1064,8 +1079,8 @@ namespace AvatarGifTool
             this.dyeLayout.Controls.Add(this.trkDyeBrightness, 2, 5);
             this.pnlDyeAdjustments.Controls.Add(this.dyeLayout);
             this.pnlDyeAdjustments.Margin = new Padding(0, 0, 0, 6);
-            this.paramsLayout.Controls.Add(this.lblDyeAdjustmentsCaption, 0, 4);
-            this.paramsLayout.Controls.Add(this.pnlDyeAdjustments, 1, 4);
+            this.paramsLayout.Controls.Add(this.lblDyeAdjustmentsCaption, 1, 4);
+            this.paramsLayout.Controls.Add(this.pnlDyeAdjustments, 2, 4);
 
             int mixRowHeight = this.ScaleForLogicalPixels(42);
             var mixLayout = new TableLayoutPanel
@@ -1095,8 +1110,8 @@ namespace AvatarGifTool
             mixLayout.Controls.Add(this.trkFaceMixOpacity, 9, 0);
             this.pnlCosmeticMix.Controls.Add(mixLayout);
             this.pnlCosmeticMix.Margin = new Padding(0, 0, 0, this.ScaleForLogicalPixels(8));
-            this.paramsLayout.Controls.Add(this.lblCosmeticMixCaption, 0, 5);
-            this.paramsLayout.Controls.Add(this.pnlCosmeticMix, 1, 5);
+            this.paramsLayout.Controls.Add(this.lblCosmeticMixCaption, 1, 5);
+            this.paramsLayout.Controls.Add(this.pnlCosmeticMix, 2, 5);
 
             var backgroundTopRow = new FlowLayoutPanel
             {
@@ -1209,20 +1224,20 @@ namespace AvatarGifTool
 
             var previewGroup = new GroupBox
             {
-                Text = "实时预览",
+                Text = string.Empty,
                 Dock = DockStyle.Fill,
                 AutoSize = false,
-                Margin = new Padding(10, 0, 0, 8),
-                Padding = new Padding(6, 18, 6, 6),
-                MinimumSize = new Size(this.ScaleForLogicalPixels(156), historyGroupHeight + this.ScaleForLogicalPixels(44)),
-                MaximumSize = new Size(this.ScaleForLogicalPixels(156), historyGroupHeight + this.ScaleForLogicalPixels(44)),
+                Margin = new Padding(0),
+                Padding = new Padding(0),
             };
             previewGroup.Controls.Add(this.picPreview);
+            this.paramsLayout.Controls.Add(previewGroup, 0, 0);
+            this.paramsLayout.SetRowSpan(previewGroup, this.paramsLayout.RowCount);
 
             var backgroundSectionLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 3,
+                ColumnCount = 2,
                 RowCount = 2,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -1230,21 +1245,18 @@ namespace AvatarGifTool
                 Padding = new Padding(0, 0, 0, this.ScaleForLogicalPixels(2)),
             };
             backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             backgroundSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             backgroundSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             backgroundSectionLayout.Controls.Add(backgroundLayout, 0, 0);
             backgroundSectionLayout.Controls.Add(backgroundImageLayout, 0, 1);
             backgroundSectionLayout.Controls.Add(historyGroup, 1, 0);
             backgroundSectionLayout.SetRowSpan(historyGroup, 2);
-            backgroundSectionLayout.Controls.Add(previewGroup, 2, 0);
-            backgroundSectionLayout.SetRowSpan(previewGroup, 2);
 
-            this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 6);
-            this.paramsLayout.Controls.Add(backgroundSectionLayout, 1, 6);
+            this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 1, 6);
+            this.paramsLayout.Controls.Add(backgroundSectionLayout, 2, 6);
             this.paramsLayout.SetRowSpan(backgroundSectionLayout, 2);
-            this.paramsLayout.Controls.Add(new Label { Text = "背景图片", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0, 8, 14, 0) }, 0, 7);
+            this.paramsLayout.Controls.Add(new Label { Text = "背景图片", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(0, 8, 14, 0) }, 1, 7);
 
             var actionRow = new FlowLayoutPanel
             {
@@ -1263,7 +1275,7 @@ namespace AvatarGifTool
                 Margin = new Padding(0),
             });
             actionRow.Controls.Add(this.btnExport);
-            this.paramsLayout.Controls.Add(actionRow, 1, 8);
+            this.paramsLayout.Controls.Add(actionRow, 2, 8);
 
             var searchLayout = new TableLayoutPanel
             {
@@ -2007,10 +2019,11 @@ namespace AvatarGifTool
                     return;
                 }
 
-                Bitmap bitmap = await Task.Run(() =>
-                    Program.RenderPreviewStand1(
+                Program.PreviewFrameSet renderedFrames = await Task.Run(() =>
+                    Program.RenderPreviewStand1Frames(
                         template,
                         gearText,
+                        this.SelectedPreviewAction,
                         this.SelectedRenderMode,
                         this.SelectedHairMixColor,
                         this.SelectedHairMixOpacity,
@@ -2023,11 +2036,37 @@ namespace AvatarGifTool
 
                 if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
                 {
-                    bitmap?.Dispose();
+                    renderedFrames?.Dispose();
                     return;
                 }
 
-                this.SetPreviewImage(bitmap);
+                if (renderedFrames == null || renderedFrames.Count == 0)
+                {
+                    renderedFrames?.Dispose();
+                    return;
+                }
+
+                var animatedFrames = new Program.PreviewFrameSet();
+                try
+                {
+                    for (int i = 0; i < renderedFrames.Count; i++)
+                    {
+                        Bitmap composedBitmap = this.ComposePreviewBitmap(renderedFrames.Frames[i]);
+                        if (composedBitmap == null)
+                        {
+                            continue;
+                        }
+
+                        animatedFrames.Frames.Add(composedBitmap);
+                        animatedFrames.Delays.Add(Math.Max(10, renderedFrames.Delays[i]));
+                    }
+                }
+                finally
+                {
+                    renderedFrames.Dispose();
+                }
+
+                this.ApplyPreviewAnimation(animatedFrames);
             }
             catch (Exception ex)
             {
@@ -2040,19 +2079,101 @@ namespace AvatarGifTool
             }
         }
 
-        private void SetPreviewImage(Bitmap bitmap)
+        private void ApplyPreviewAnimation(Program.PreviewFrameSet frameSet)
         {
-            Image oldImage = this.picPreview.Image;
-            this.picPreview.Image = bitmap;
-            if (oldImage != null && !ReferenceEquals(oldImage, bitmap))
+            this.previewFrameTimer.Stop();
+            this.picPreview.Image = null;
+            this.previewFrameSet?.Dispose();
+            this.previewFrameSet = frameSet;
+            this.previewFrameIndex = 0;
+
+            if (frameSet == null || frameSet.Count == 0)
             {
-                oldImage.Dispose();
+                return;
             }
+
+            this.picPreview.Image = frameSet.Frames[0];
+            if (frameSet.Count <= 1)
+            {
+                return;
+            }
+
+            this.previewFrameTimer.Interval = Math.Max(10, frameSet.Delays[0]);
+            this.previewFrameTimer.Start();
+        }
+
+        private void PreviewFrameTimer_Tick(object sender, EventArgs e)
+        {
+            this.previewFrameTimer.Stop();
+            if (this.previewFrameSet == null || this.previewFrameSet.Count == 0)
+            {
+                return;
+            }
+
+            this.previewFrameIndex = (this.previewFrameIndex + 1) % this.previewFrameSet.Count;
+            this.picPreview.Image = this.previewFrameSet.Frames[this.previewFrameIndex];
+            this.previewFrameTimer.Interval = Math.Max(10, this.previewFrameSet.Delays[this.previewFrameIndex]);
+            this.previewFrameTimer.Start();
+        }
+
+        private Bitmap ComposePreviewBitmap(Bitmap avatarBitmap)
+        {
+            if (avatarBitmap == null || avatarBitmap.Width <= 0 || avatarBitmap.Height <= 0)
+            {
+                return null;
+            }
+
+            int horizontalMargin = Math.Max(0, (int)Math.Ceiling(avatarBitmap.Width * 0.15));
+            int verticalMargin = 0;
+            int previewWidth = avatarBitmap.Width + (horizontalMargin * 2);
+            int previewHeight = avatarBitmap.Height + (verticalMargin * 2);
+            var previewBitmap = new Bitmap(previewWidth, previewHeight, PixelFormat.Format32bppArgb);
+            using (Graphics graphics = Graphics.FromImage(previewBitmap))
+            {
+                graphics.Clear(this.currentBackgroundColor);
+                graphics.CompositingMode = CompositingMode.SourceOver;
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                if (!string.IsNullOrWhiteSpace(this.currentBackgroundImagePath)
+                    && File.Exists(this.currentBackgroundImagePath))
+                {
+                    using Image backgroundImage = Image.FromFile(this.currentBackgroundImagePath);
+                    Rectangle destination = this.GetCoverRectangle(previewBitmap.Size, backgroundImage.Size);
+                    graphics.DrawImage(backgroundImage, destination);
+                }
+
+                graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                graphics.DrawImage(avatarBitmap, horizontalMargin, verticalMargin, avatarBitmap.Width, avatarBitmap.Height);
+            }
+
+            return previewBitmap;
+        }
+
+        private Rectangle GetCoverRectangle(Size canvasSize, Size imageSize)
+        {
+            if (canvasSize.Width <= 0 || canvasSize.Height <= 0 || imageSize.Width <= 0 || imageSize.Height <= 0)
+            {
+                return new Rectangle(Point.Empty, canvasSize);
+            }
+
+            double scale = Math.Max(
+                canvasSize.Width / (double)imageSize.Width,
+                canvasSize.Height / (double)imageSize.Height);
+            int drawWidth = Math.Max(canvasSize.Width, (int)Math.Ceiling(imageSize.Width * scale));
+            int drawHeight = Math.Max(canvasSize.Height, (int)Math.Ceiling(imageSize.Height * scale));
+            int drawX = (canvasSize.Width - drawWidth) / 2;
+            int drawY = (canvasSize.Height - drawHeight) / 2;
+            return new Rectangle(drawX, drawY, drawWidth, drawHeight);
         }
 
         private void BtnExportSettings_Click(object sender, EventArgs e)
         {
-            using var dialog = new ExportSettingsForm(this.SelectedNormalExportActions, this.SelectedDyeExportAction);
+            using var dialog = new ExportSettingsForm(
+                this.SelectedNormalExportActions,
+                this.SelectedDyeExportAction,
+                this.SelectedPreviewAction);
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
                 return;
@@ -2060,6 +2181,7 @@ namespace AvatarGifTool
 
             this.normalExportActions = Program.NormalizeNormalActionSelection(dialog.SelectedNormalActions);
             this.dyeExportAction = Program.NormalizeDyeActionSelection(dialog.SelectedDyeAction);
+            this.previewAction = Program.NormalizePreviewAction(dialog.SelectedPreviewAction);
             this.SaveConfig();
             this.MarkPreviewDirty();
         }
@@ -2929,6 +3051,7 @@ namespace AvatarGifTool
             this.config.SearchTarget = this.SelectedSearchTarget;
             this.config.NormalExportActions = this.SelectedNormalExportActions.ToList();
             this.config.DyeExportAction = this.SelectedDyeExportAction;
+            this.config.PreviewAction = this.SelectedPreviewAction;
             this.config.TemplateHistory = NormalizeTemplateHistory(this.templateHistory);
 
             this.configStore.Save(this.config);
@@ -4482,15 +4605,24 @@ namespace AvatarGifTool
     {
         private readonly List<CheckBox> normalActionChecks;
         private readonly List<RadioButton> dyeActionRadios;
+        private readonly ComboBox cboPreviewAction;
         private readonly Button btnOk;
 
-        public ExportSettingsForm(IEnumerable<string> selectedNormalActions, string selectedDyeAction)
+        public ExportSettingsForm(IEnumerable<string> selectedNormalActions, string selectedDyeAction, string selectedPreviewAction)
         {
             string[] normalizedNormalActions = Program.NormalizeNormalActionSelection(selectedNormalActions);
             string normalizedDyeAction = Program.NormalizeDyeActionSelection(selectedDyeAction);
+            string normalizedPreviewAction = Program.NormalizePreviewAction(selectedPreviewAction);
 
             this.normalActionChecks = new List<CheckBox>();
             this.dyeActionRadios = new List<RadioButton>();
+            this.cboPreviewAction = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 150,
+            };
+            this.cboPreviewAction.Items.AddRange(Program.SupportedExportActions.Cast<object>().ToArray());
+            this.cboPreviewAction.SelectedIndex = Math.Max(0, Array.IndexOf(Program.SupportedExportActions.ToArray(), normalizedPreviewAction));
             this.btnOk = new Button
             {
                 Text = "确定",
@@ -4500,7 +4632,7 @@ namespace AvatarGifTool
                 Margin = new Padding(0),
             };
 
-            this.Text = "导出设置";
+            this.Text = "设置";
             this.StartPosition = FormStartPosition.CenterParent;
             this.AutoScaleMode = AutoScaleMode.Dpi;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -4508,16 +4640,17 @@ namespace AvatarGifTool
             this.MinimizeBox = false;
             this.ShowInTaskbar = false;
             this.Padding = new Padding(12);
-            this.ClientSize = new Size(640, 300);
+            this.ClientSize = new Size(640, 380);
 
             var rootLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 2,
+                RowCount = 3,
             };
             rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             var bodyLayout = new TableLayoutPanel
@@ -4561,8 +4694,25 @@ namespace AvatarGifTool
             footerLayout.Controls.Add(btnCancel);
             footerLayout.Controls.Add(this.btnOk);
 
+            var previewRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                Margin = new Padding(0, 10, 0, 0),
+            };
+            previewRow.Controls.Add(new Label
+            {
+                Text = "预览姿势",
+                AutoSize = true,
+                Margin = new Padding(0, 1, 10, 0),
+            });
+            previewRow.Controls.Add(this.cboPreviewAction);
+
             rootLayout.Controls.Add(bodyLayout, 0, 0);
-            rootLayout.Controls.Add(footerLayout, 0, 1);
+            rootLayout.Controls.Add(previewRow, 0, 1);
+            rootLayout.Controls.Add(footerLayout, 0, 2);
             this.Controls.Add(rootLayout);
 
             this.AcceptButton = this.btnOk;
@@ -4575,6 +4725,9 @@ namespace AvatarGifTool
 
         public string SelectedDyeAction => Program.NormalizeDyeActionSelection(
             this.dyeActionRadios.FirstOrDefault(radio => radio.Checked)?.Tag as string);
+
+        public string SelectedPreviewAction => Program.NormalizePreviewAction(
+            this.cboPreviewAction.SelectedItem as string);
 
         private GroupBox BuildNormalActionsGroup(IReadOnlyCollection<string> selectedNormalActions)
         {
