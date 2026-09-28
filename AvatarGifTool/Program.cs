@@ -162,6 +162,82 @@ namespace AvatarGifTool
             return NormalizeOutputPath(options.OutputPath);
         }
 
+        internal static Bitmap RenderPreviewStand1(
+            string templateText,
+            string gearText,
+            RenderMode renderMode,
+            int hairMixColor,
+            int hairMixOpacity,
+            int faceMixColor,
+            int faceMixOpacity,
+            int prismType,
+            int hue,
+            int saturationOffset,
+            int brightnessOffset)
+        {
+            AvatarTemplate template = AvatarTemplate.Parse(templateText, DetectAppearanceIdKind);
+            int[] gearIds = string.IsNullOrWhiteSpace(gearText)
+                ? Array.Empty<int>()
+                : ParseIdList(gearText, "Gear");
+
+            using var avatar = new AvatarBuilder();
+
+            avatar.AddBodyFromSkin(template.Skin);
+            avatar.AddHairOrFace(template.Face);
+            avatar.AddHairOrFace(template.Hair);
+
+            foreach (int presetGearId in template.PresetGearIds)
+            {
+                avatar.AddGear(presetGearId, required: true);
+            }
+
+            var dyeTargetParts = new List<AvatarPart>(gearIds.Length);
+            foreach (int gearId in gearIds)
+            {
+                AvatarPart targetPart = avatar.AddGear(gearId, required: true);
+                if (targetPart != null)
+                {
+                    dyeTargetParts.Add(targetPart);
+                }
+            }
+
+            avatar.ReloadEffects();
+            avatar.ApplyCosmeticMix(
+                hairMixColor,
+                hairMixOpacity,
+                faceMixColor,
+                faceMixOpacity);
+
+            if (renderMode == RenderMode.DyeGrid)
+            {
+                ApplyPrism(
+                    dyeTargetParts,
+                    prismType,
+                    0,
+                    ClampPrismValue(100 + saturationOffset),
+                    ClampPrismValue(100 + brightnessOffset));
+            }
+            else if (renderMode == RenderMode.ExactDye)
+            {
+                ApplyPrism(
+                    dyeTargetParts,
+                    prismType,
+                    hue,
+                    ClampPrismValue(100 + saturationOffset),
+                    ClampPrismValue(100 + brightnessOffset));
+            }
+
+            avatar.ClearSkinCache();
+            string emotion = avatar.GetStandardEmotion();
+            using RenderTrack track = RenderSingleTrack(avatar, "stand1", emotion, "stand1");
+            if (track == null || track.Frames.Count == 0)
+            {
+                return null;
+            }
+
+            return new Bitmap(track.Frames[0].Bitmap);
+        }
+
         private static void Run(CommandOptions options, bool manageWzContext)
         {
             if (manageWzContext)

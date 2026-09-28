@@ -13,6 +13,14 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.22.1
+
+- 实时预览框高度增加，宽度调整为比模型略宽并固定，不再过度拉伸。
+
+### 2.22.0
+
+- 收窄历史搭配按钮，并在历史搭配右侧新增实时预览框，使用 `stand1` 动作显示当前配置的角色。
+
 ### 2.21.1
 
 - 调整头发 / 瞳色混染 UI：去掉混染滑条刻度，混染行控件垂直居中，并增加上下间距。

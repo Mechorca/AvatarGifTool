@@ -65,6 +65,7 @@ namespace AvatarGifTool
         private readonly Label lblBackgroundColorValue;
         private readonly Label lblBackgroundImageValue;
         private readonly FlowLayoutPanel pnlHistoryButtons;
+        private readonly PictureBox picPreview;
         private readonly CheckBox chkTransparentBackground;
         private readonly Button btnBrowseBase;
         private readonly Button btnPickBackgroundColor;
@@ -90,6 +91,7 @@ namespace AvatarGifTool
         private TableLayoutPanel paramsLayout;
         private TableLayoutPanel dyeLayout;
         private readonly System.Windows.Forms.Timer previewTimer;
+        private readonly System.Windows.Forms.Timer previewImageTimer;
         private readonly ColorDialog backgroundColorDialog;
         private readonly MetadataResolver metadataResolver;
         private readonly AppConfigStore configStore;
@@ -126,6 +128,8 @@ namespace AvatarGifTool
             this.metadataResolver = new MetadataResolver();
             this.previewTimer = new System.Windows.Forms.Timer { Interval = 450 };
             this.previewTimer.Tick += this.PreviewTimer_Tick;
+            this.previewImageTimer = new System.Windows.Forms.Timer { Interval = 350 };
+            this.previewImageTimer.Tick += this.PreviewImageTimer_Tick;
             this.backgroundPaletteButtons = new List<Button>();
             this.historyButtons = new List<HistoryTemplateButton>();
             this.searchResults = new List<AppearanceSearchResult>();
@@ -188,6 +192,13 @@ namespace AvatarGifTool
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
                 Text = "请选择 Base.wz，然后填写模板。",
+            };
+            this.picPreview = new PictureBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.White,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
             };
             this.txtSearch = new AlignedInputBox
             {
@@ -351,6 +362,8 @@ namespace AvatarGifTool
             this.SaveConfig();
             this.previewTimer.Stop();
             this.previewTimer.Dispose();
+            this.previewImageTimer.Stop();
+            this.previewImageTimer.Dispose();
             this.CloseSearchPreviewTooltip();
             this.metadataResolver.Dispose();
             base.OnFormClosed(e);
@@ -590,7 +603,7 @@ namespace AvatarGifTool
             int buttonHeight = this.ScaleForLogicalPixels(34);
             int primaryButtonHeight = this.ScaleForLogicalPixels(38);
             int historyLineHeight = TextRenderer.MeasureText("肤", this.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Height;
-            int historyButtonWidth = this.ScaleForLogicalPixels(132);
+            int historyButtonWidth = this.ScaleForLogicalPixels(100);
             int historyButtonHeight = Math.Max(this.ScaleForLogicalPixels(68), (historyLineHeight * 3) + this.ScaleForLogicalPixels(12));
 
             ConfigureTextInput(this.txtTemplate, inputHeight);
@@ -1178,7 +1191,7 @@ namespace AvatarGifTool
             backgroundImageLayout.Controls.Add(backgroundImageRow, 0, 0);
 
             int historyLineHeight = TextRenderer.MeasureText("肤", this.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Height;
-            int historyButtonWidth = this.ScaleForLogicalPixels(132);
+            int historyButtonWidth = this.ScaleForLogicalPixels(100);
             int historyButtonHeight = Math.Max(this.ScaleForLogicalPixels(68), (historyLineHeight * 3) + this.ScaleForLogicalPixels(12));
             int historyGroupWidth = ((historyButtonWidth + this.ScaleForLogicalPixels(4)) * MaxTemplateHistoryCount) + this.ScaleForLogicalPixels(22);
             int historyGroupHeight = historyButtonHeight + this.ScaleForLogicalPixels(34);
@@ -1194,10 +1207,22 @@ namespace AvatarGifTool
             };
             historyGroup.Controls.Add(this.pnlHistoryButtons);
 
+            var previewGroup = new GroupBox
+            {
+                Text = "实时预览",
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                Margin = new Padding(10, 0, 0, 8),
+                Padding = new Padding(6, 18, 6, 6),
+                MinimumSize = new Size(this.ScaleForLogicalPixels(156), historyGroupHeight + this.ScaleForLogicalPixels(44)),
+                MaximumSize = new Size(this.ScaleForLogicalPixels(156), historyGroupHeight + this.ScaleForLogicalPixels(44)),
+            };
+            previewGroup.Controls.Add(this.picPreview);
+
             var backgroundSectionLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 2,
+                ColumnCount = 3,
                 RowCount = 2,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -1205,13 +1230,16 @@ namespace AvatarGifTool
                 Padding = new Padding(0, 0, 0, this.ScaleForLogicalPixels(2)),
             };
             backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            backgroundSectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             backgroundSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             backgroundSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             backgroundSectionLayout.Controls.Add(backgroundLayout, 0, 0);
             backgroundSectionLayout.Controls.Add(backgroundImageLayout, 0, 1);
             backgroundSectionLayout.Controls.Add(historyGroup, 1, 0);
             backgroundSectionLayout.SetRowSpan(historyGroup, 2);
+            backgroundSectionLayout.Controls.Add(previewGroup, 2, 0);
+            backgroundSectionLayout.SetRowSpan(previewGroup, 2);
 
             this.paramsLayout.Controls.Add(new Label { Text = "GIF 背景", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 0, 6);
             this.paramsLayout.Controls.Add(backgroundSectionLayout, 1, 6);
@@ -1868,6 +1896,8 @@ namespace AvatarGifTool
             }
 
             this.txtPreview.Text = "参数已变更，请点击校验。";
+            this.previewImageTimer.Stop();
+            this.previewImageTimer.Start();
         }
 
         private async void BtnValidatePreview_Click(object sender, EventArgs e)
@@ -1891,6 +1921,18 @@ namespace AvatarGifTool
 
             int requestVersion = this.previewVersion;
             await this.RefreshPreviewAsync(requestVersion);
+        }
+
+        private async void PreviewImageTimer_Tick(object sender, EventArgs e)
+        {
+            this.previewImageTimer.Stop();
+            if (this.isBusy || this.isSearching || !this.IsBaseLoaded)
+            {
+                return;
+            }
+
+            int requestVersion = this.previewVersion;
+            await this.RefreshPreviewImageAsync(requestVersion);
         }
 
         private async Task RefreshPreviewAsync(int requestVersion)
@@ -1946,6 +1988,65 @@ namespace AvatarGifTool
 
                 ErrorLog.Write(ex, "MainForm.RefreshPreviewAsync");
                 this.txtPreview.Text = ex.Message;
+            }
+        }
+
+        private async Task RefreshPreviewImageAsync(int requestVersion)
+        {
+            if (!this.IsBaseLoaded)
+            {
+                return;
+            }
+
+            try
+            {
+                string template = this.BuildTemplateIdText();
+                string gearText = this.BuildGearIdText();
+                if (string.IsNullOrWhiteSpace(template))
+                {
+                    return;
+                }
+
+                Bitmap bitmap = await Task.Run(() =>
+                    Program.RenderPreviewStand1(
+                        template,
+                        gearText,
+                        this.SelectedRenderMode,
+                        this.SelectedHairMixColor,
+                        this.SelectedHairMixOpacity,
+                        this.SelectedFaceMixColor,
+                        this.SelectedFaceMixOpacity,
+                        this.SelectedDyePrismType,
+                        (int)this.nudDyeHue.Value,
+                        this.trkDyeSaturation.Value,
+                        this.trkDyeBrightness.Value));
+
+                if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
+                {
+                    bitmap?.Dispose();
+                    return;
+                }
+
+                this.SetPreviewImage(bitmap);
+            }
+            catch (Exception ex)
+            {
+                if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
+                {
+                    return;
+                }
+
+                ErrorLog.Write(ex, "MainForm.RefreshPreviewImageAsync");
+            }
+        }
+
+        private void SetPreviewImage(Bitmap bitmap)
+        {
+            Image oldImage = this.picPreview.Image;
+            this.picPreview.Image = bitmap;
+            if (oldImage != null && !ReferenceEquals(oldImage, bitmap))
+            {
+                oldImage.Dispose();
             }
         }
 
@@ -2800,6 +2901,10 @@ namespace AvatarGifTool
         {
             this.isBusy = busy;
             this.previewTimer.Stop();
+            if (busy)
+            {
+                this.previewImageTimer.Stop();
+            }
             this.UpdateSearchNavigationState();
         }
 
