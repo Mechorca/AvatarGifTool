@@ -31,6 +31,8 @@ namespace AvatarGifTool
 
     internal sealed class TemplateHistoryItem
     {
+        public List<int> AppearanceIds { get; set; } = new List<int>();
+        public List<string> AppearanceNames { get; set; } = new List<string>();
         public int Skin { get; set; }
         public string SkinName { get; set; }
         public int Face { get; set; }

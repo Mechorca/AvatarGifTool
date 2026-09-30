@@ -13,6 +13,24 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.25.0
+
+- 实时预览模型左右留白恢复为各约 15%。
+- 历史搭配会在导出成功后保存当次实际导出的全部外观，并在回填时恢复完整外观；旧的三属性历史记录会自动兼容迁移。
+
+### 2.24.4
+
+- 实时预览模型左右留白由各约 15% 调整为各约 20%。
+
+### 2.24.3
+
+- 标题栏版本号改为只使用程序集三段版本，去除版本号与群号之间可能出现的构建标识乱码。
+
+### 2.24.2
+
+- 主窗口标题栏追加显示“暖暖群号102508905”。
+- 设置窗口的预览姿势由下拉框改为与染色模式一致的单选动作列表，并增加预览动作必选校验。
+
 ### 2.24.1
 
 - 预览模型两侧留白调整为约 15%。

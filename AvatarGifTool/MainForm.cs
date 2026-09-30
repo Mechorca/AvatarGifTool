@@ -598,10 +598,8 @@ namespace AvatarGifTool
         private static string GetWindowTitle()
         {
             Assembly assembly = typeof(MainForm).Assembly;
-            string version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                ?? assembly.GetName().Version?.ToString()
-                ?? "unknown";
-            return $"AvatarGifTool v{version}";
+            string version = assembly.GetName().Version?.ToString(3) ?? "unknown";
+            return $"AvatarGifTool v{version} - 暖暖群号102508905";
         }
 
         private static Font CreateUiFont()
@@ -763,12 +761,30 @@ namespace AvatarGifTool
 
             foreach (TemplateHistoryItem item in items ?? Enumerable.Empty<TemplateHistoryItem>())
             {
-                if (item == null || item.Skin <= 0 || item.Face <= 0 || item.Hair <= 0)
+                if (item == null)
                 {
                     continue;
                 }
 
-                string key = BuildTemplateHistoryKey(item.Skin, item.Face, item.Hair);
+                List<int> appearanceIds = item.AppearanceIds?
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList()
+                    ?? new List<int>();
+                List<string> appearanceNames = item.AppearanceNames ?? new List<string>();
+
+                if (appearanceIds.Count == 0)
+                {
+                    if (item.Skin <= 0 || item.Face <= 0 || item.Hair <= 0)
+                    {
+                        continue;
+                    }
+
+                    appearanceIds.AddRange(new[] { item.Hair, item.Face, item.Skin });
+                    appearanceNames = new List<string> { item.HairName, item.FaceName, item.SkinName };
+                }
+
+                string key = BuildTemplateHistoryKey(appearanceIds);
                 if (!seen.Add(key))
                 {
                     continue;
@@ -776,6 +792,8 @@ namespace AvatarGifTool
 
                 normalized.Add(new TemplateHistoryItem
                 {
+                    AppearanceIds = appearanceIds,
+                    AppearanceNames = appearanceIds.Select((_, index) => index < appearanceNames.Count ? appearanceNames[index] : null).ToList(),
                     Skin = item.Skin,
                     SkinName = item.SkinName,
                     Face = item.Face,
@@ -793,9 +811,9 @@ namespace AvatarGifTool
             return normalized;
         }
 
-        private static string BuildTemplateHistoryKey(int skin, int face, int hair)
+        private static string BuildTemplateHistoryKey(IEnumerable<int> appearanceIds)
         {
-            return $"{skin}:{face}:{hair}";
+            return string.Join(":", appearanceIds ?? Enumerable.Empty<int>());
         }
 
         private Color GetConfiguredBackgroundColor()
@@ -1989,7 +2007,6 @@ namespace AvatarGifTool
                 }
 
                 this.txtPreview.Text = preview.PreviewText;
-                this.RememberTemplateHistory(preview);
             }
             catch (Exception ex)
             {
@@ -2245,6 +2262,7 @@ namespace AvatarGifTool
                 this.lblStatus.Text = "正在导出 GIF...";
                 string outputPath = await Task.Run(() => Program.Execute(options, manageWzContext: false));
 
+                this.RememberTemplateHistory(preview);
                 this.lblStatus.Text = $"导出完成：{outputPath}";
                 MessageBox.Show(this, $"导出完成：\r\n{outputPath}", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -2796,12 +2814,7 @@ namespace AvatarGifTool
                 return;
             }
 
-            this.SetTemplateDisplayTokens(new[]
-            {
-                (item.Hair, item.HairName),
-                (item.Face, item.FaceName),
-                (item.Skin, item.SkinName),
-            });
+            this.SetTemplateDisplayTokens(this.GetHistoryAppearanceTokens(item));
             this.txtTemplate.SelectionStart = this.txtTemplate.TextLength;
             this.txtTemplate.SelectionLength = 0;
             this.txtTemplate.Focus();
@@ -2840,8 +2853,37 @@ namespace AvatarGifTool
             {
                 $"发 {this.ResolveHistoryDisplayName(item.HairName, item.Hair, Program.AppearanceIdKind.Hair)}",
                 $"脸 {this.ResolveHistoryDisplayName(item.FaceName, item.Face, Program.AppearanceIdKind.Face)}",
-                $"肤 {this.ResolveHistoryDisplayName(item.SkinName, item.Skin, Program.AppearanceIdKind.Skin)}",
+                $"肤 {this.ResolveHistoryDisplayName(item.SkinName, item.Skin, Program.AppearanceIdKind.Skin)} · 共 {item.AppearanceIds?.Count ?? 3} 件",
             };
+        }
+
+        private IEnumerable<(int Id, string Name)> GetHistoryAppearanceTokens(TemplateHistoryItem item)
+        {
+            if (item?.AppearanceIds?.Count > 0)
+            {
+                for (int index = 0; index < item.AppearanceIds.Count; index++)
+                {
+                    int id = item.AppearanceIds[index];
+                    if (id <= 0)
+                    {
+                        continue;
+                    }
+
+                    string name = index < item.AppearanceNames?.Count
+                        ? item.AppearanceNames[index]
+                        : null;
+                    yield return (id, name);
+                }
+
+                yield break;
+            }
+
+            if (item != null)
+            {
+                yield return (item.Hair, item.HairName);
+                yield return (item.Face, item.FaceName);
+                yield return (item.Skin, item.SkinName);
+            }
         }
 
         private void RememberTemplateHistory(ResolvedAppearancePreview preview)
@@ -2851,10 +2893,21 @@ namespace AvatarGifTool
                 return;
             }
 
-            string key = BuildTemplateHistoryKey(preview.SkinId.Value, preview.FaceId.Value, preview.HairId.Value);
-            this.templateHistory.RemoveAll(item => BuildTemplateHistoryKey(item.Skin, item.Face, item.Hair) == key);
+            List<ResolvedAppearanceEntry> entries = preview.Entries
+                ?.Where(entry => entry.Id.HasValue && entry.Id.Value > 0)
+                .ToList();
+            if (entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            List<int> appearanceIds = entries.Select(entry => entry.Id.Value).ToList();
+            string key = BuildTemplateHistoryKey(appearanceIds);
+            this.templateHistory.RemoveAll(item => BuildTemplateHistoryKey(item.AppearanceIds) == key);
             this.templateHistory.Insert(0, new TemplateHistoryItem
             {
+                AppearanceIds = appearanceIds,
+                AppearanceNames = entries.Select(entry => entry.Name).ToList(),
                 Skin = preview.SkinId.Value,
                 SkinName = this.metadataResolver.ResolveName(preview.SkinId.Value, Program.AppearanceIdKind.Skin),
                 Face = preview.FaceId.Value,
@@ -4605,7 +4658,7 @@ namespace AvatarGifTool
     {
         private readonly List<CheckBox> normalActionChecks;
         private readonly List<RadioButton> dyeActionRadios;
-        private readonly ComboBox cboPreviewAction;
+        private readonly List<RadioButton> previewActionRadios;
         private readonly Button btnOk;
 
         public ExportSettingsForm(IEnumerable<string> selectedNormalActions, string selectedDyeAction, string selectedPreviewAction)
@@ -4616,13 +4669,7 @@ namespace AvatarGifTool
 
             this.normalActionChecks = new List<CheckBox>();
             this.dyeActionRadios = new List<RadioButton>();
-            this.cboPreviewAction = new ComboBox
-            {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 150,
-            };
-            this.cboPreviewAction.Items.AddRange(Program.SupportedExportActions.Cast<object>().ToArray());
-            this.cboPreviewAction.SelectedIndex = Math.Max(0, Array.IndexOf(Program.SupportedExportActions.ToArray(), normalizedPreviewAction));
+            this.previewActionRadios = new List<RadioButton>();
             this.btnOk = new Button
             {
                 Text = "确定",
@@ -4640,7 +4687,7 @@ namespace AvatarGifTool
             this.MinimizeBox = false;
             this.ShowInTaskbar = false;
             this.Padding = new Padding(12);
-            this.ClientSize = new Size(640, 380);
+            this.ClientSize = new Size(920, 380);
 
             var rootLayout = new TableLayoutPanel
             {
@@ -4656,12 +4703,13 @@ namespace AvatarGifTool
             var bodyLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 2,
+                ColumnCount = 3,
                 RowCount = 1,
                 Margin = new Padding(0),
             };
-            bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-            bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333f));
+            bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333f));
+            bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.334f));
 
             bodyLayout.Controls.Add(
                 this.BuildNormalActionsGroup(normalizedNormalActions),
@@ -4670,6 +4718,10 @@ namespace AvatarGifTool
             bodyLayout.Controls.Add(
                 this.BuildDyeActionGroup(normalizedDyeAction),
                 1,
+                0);
+            bodyLayout.Controls.Add(
+                this.BuildPreviewActionGroup(normalizedPreviewAction),
+                2,
                 0);
 
             var footerLayout = new FlowLayoutPanel
@@ -4694,25 +4746,8 @@ namespace AvatarGifTool
             footerLayout.Controls.Add(btnCancel);
             footerLayout.Controls.Add(this.btnOk);
 
-            var previewRow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoSize = true,
-                Margin = new Padding(0, 10, 0, 0),
-            };
-            previewRow.Controls.Add(new Label
-            {
-                Text = "预览姿势",
-                AutoSize = true,
-                Margin = new Padding(0, 1, 10, 0),
-            });
-            previewRow.Controls.Add(this.cboPreviewAction);
-
             rootLayout.Controls.Add(bodyLayout, 0, 0);
-            rootLayout.Controls.Add(previewRow, 0, 1);
-            rootLayout.Controls.Add(footerLayout, 0, 2);
+            rootLayout.Controls.Add(footerLayout, 0, 1);
             this.Controls.Add(rootLayout);
 
             this.AcceptButton = this.btnOk;
@@ -4727,7 +4762,7 @@ namespace AvatarGifTool
             this.dyeActionRadios.FirstOrDefault(radio => radio.Checked)?.Tag as string);
 
         public string SelectedPreviewAction => Program.NormalizePreviewAction(
-            this.cboPreviewAction.SelectedItem as string);
+            this.previewActionRadios.FirstOrDefault(radio => radio.Checked)?.Tag as string);
 
         private GroupBox BuildNormalActionsGroup(IReadOnlyCollection<string> selectedNormalActions)
         {
@@ -4819,6 +4854,51 @@ namespace AvatarGifTool
             return group;
         }
 
+        private GroupBox BuildPreviewActionGroup(string selectedPreviewAction)
+        {
+            var group = new GroupBox
+            {
+                Text = "预览姿势设置",
+                Dock = DockStyle.Fill,
+                Margin = new Padding(8, 0, 0, 0),
+                Padding = new Padding(12, 16, 12, 12),
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                AutoSize = true,
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            foreach (string actionName in Program.SupportedExportActions)
+            {
+                var radioButton = new RadioButton
+                {
+                    Text = actionName,
+                    Tag = actionName,
+                    AutoSize = true,
+                    Checked = string.Equals(actionName, selectedPreviewAction, StringComparison.OrdinalIgnoreCase),
+                    Margin = new Padding(0, 0, 0, 8),
+                };
+                radioButton.CheckedChanged += this.ActionSelectionControl_Changed;
+                this.previewActionRadios.Add(radioButton);
+                layout.Controls.Add(radioButton);
+            }
+
+            layout.Controls.Add(new Label
+            {
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0, 8, 0, 0),
+                Text = "预览只会使用一个动作。",
+            });
+
+            group.Controls.Add(layout);
+            return group;
+        }
+
         private void ActionSelectionControl_Changed(object sender, EventArgs e)
         {
             this.UpdateOkButtonEnabled();
@@ -4827,7 +4907,8 @@ namespace AvatarGifTool
         private void UpdateOkButtonEnabled()
         {
             this.btnOk.Enabled = this.normalActionChecks.Any(check => check.Checked)
-                && this.dyeActionRadios.Any(radio => radio.Checked);
+                && this.dyeActionRadios.Any(radio => radio.Checked)
+                && this.previewActionRadios.Any(radio => radio.Checked);
         }
 
         private void BtnOk_Click(object sender, EventArgs e)
@@ -4841,6 +4922,12 @@ namespace AvatarGifTool
             if (!this.dyeActionRadios.Any(radio => radio.Checked))
             {
                 MessageBox.Show(this, "染色模式需要选择一个动作。", "导出设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!this.previewActionRadios.Any(radio => radio.Checked))
+            {
+                MessageBox.Show(this, "预览姿势需要选择一个动作。", "导出设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
