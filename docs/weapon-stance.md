@@ -12,7 +12,8 @@
 
 - 普通模式动作导出
 - 精确染色模式动作导出
-- 染色模式的单动作导出
+- 整体染色模式的单动作导出
+- 分体染色模式的多 Gear 动作导出
 - 实时预览
 - 命令行导出
 
@@ -136,16 +137,16 @@ AvatarGifTool.exe --base-wz D:\Maple\Data\Base\Base.wz --template 1051001,30000,
 
 ## 构建产物
 
-`2.26.1` 已使用 Release / `win-x64` 配置发布：
+`2.27.1` 已使用 Release / `win-x64` 配置发布：
 
-- 可运行单文件：`AvatarGifTool/dist/AvatarGifTool_v2.26.1.exe`
+- 可运行单文件：`AvatarGifTool/dist/AvatarGifTool_v2.27.1.exe`
 - 发布中间产物：`AvatarGifTool/bin/x64/Release/net8.0-windows/win-x64/`
 - 构建输出：`AvatarGifTool/bin/x64/Release/net8.0-windows/`
 
 本次发布文件大小约 179 MB，SHA-256：
 
 ```text
-31a54d8a845bfb4efad2d7a030ed13dd8d6ff42ee24fbca86829b54304996377
+631448b6a0c06211af5407313da68e209a4f2d1236693359cbbb325869827d29
 ```
 
 ## 验证
@@ -153,8 +154,8 @@ AvatarGifTool.exe --base-wz D:\Maple\Data\Base\Base.wz --template 1051001,30000,
 本工作区没有游戏 `Base.wz` 数据，因此无法在本地实际渲染并目视核对每个武器动作。已完成：
 
 - 项目编译验证：`AvatarGifTool` 构建成功，0 个错误（140 个既有警告）
-- 单文件发布验证：`AvatarGifTool_v2.26.1.exe` 已生成，PE32+ x86-64 Windows GUI 程序
-- 代码路径核对：设置弹窗、配置保存、实时预览、普通/精确染色导出、CLI 均已接入
+- 单文件发布验证：`AvatarGifTool_v2.27.1.exe` 已生成，PE32+ x86-64 Windows GUI 程序
+- 代码路径核对：设置弹窗、配置保存、实时预览、普通/整体/精确/分体染色导出、CLI 均已接入
 - 映射规则核对：所有替换都要求武器节点存在目标动作，否则回退原动作
 
 建议在 Windows 环境使用实际 `Base.wz` 分别测试单手剑、双手剑和枪武器。

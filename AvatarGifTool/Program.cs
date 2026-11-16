@@ -68,6 +68,31 @@ namespace AvatarGifTool
                 : WeaponStance.OneHand;
         }
 
+        internal static IReadOnlyList<GearDyeSetting> NormalizeSeparateDyeSettings(IEnumerable<GearDyeSetting> settings)
+        {
+            var normalized = new List<GearDyeSetting>();
+            var seenGearIds = new HashSet<int>();
+            foreach (GearDyeSetting setting in settings ?? Enumerable.Empty<GearDyeSetting>())
+            {
+                if (setting == null || setting.GearId <= 0 || !seenGearIds.Add(setting.GearId))
+                {
+                    continue;
+                }
+
+                normalized.Add(new GearDyeSetting
+                {
+                    GearId = setting.GearId,
+                    GearName = setting.GearName,
+                    PrismType = NormalizePrismType(setting.PrismType),
+                    Hue = Math.Max(0, Math.Min(359, setting.Hue)),
+                    SaturationOffset = Math.Max(-99, Math.Min(99, setting.SaturationOffset)),
+                    BrightnessOffset = Math.Max(-99, Math.Min(99, setting.BrightnessOffset)),
+                });
+            }
+
+            return normalized;
+        }
+
         internal static string GetWeaponStanceDisplayName(WeaponStance stance)
         {
             return stance switch
@@ -363,7 +388,8 @@ namespace AvatarGifTool
             int hue,
             int saturationOffset,
             int brightnessOffset,
-            WeaponStance weaponStance = WeaponStance.OneHand)
+            WeaponStance weaponStance = WeaponStance.OneHand,
+            IReadOnlyList<GearDyeSetting> separateDyeSettings = null)
         {
             AvatarTemplate template = AvatarTemplate.Parse(templateText, DetectAppearanceIdKind);
             int[] gearIds = string.IsNullOrWhiteSpace(gearText)
@@ -382,12 +408,14 @@ namespace AvatarGifTool
             }
 
             var dyeTargetParts = new List<AvatarPart>(gearIds.Length);
+            var dyeTargetPartsById = new Dictionary<int, AvatarPart>(gearIds.Length);
             foreach (int gearId in gearIds)
             {
                 AvatarPart targetPart = avatar.AddGear(gearId, required: true);
                 if (targetPart != null)
                 {
                     dyeTargetParts.Add(targetPart);
+                    dyeTargetPartsById[gearId] = targetPart;
                 }
             }
 
@@ -415,6 +443,10 @@ namespace AvatarGifTool
                     hue,
                     ClampPrismValue(100 + saturationOffset),
                     ClampPrismValue(100 + brightnessOffset));
+            }
+            else if (renderMode == RenderMode.SeparateDye)
+            {
+                ApplySeparateDye(dyeTargetPartsById, separateDyeSettings);
             }
 
             avatar.ClearSkinCache();
@@ -469,12 +501,14 @@ namespace AvatarGifTool
             }
 
             var dyeTargetParts = new List<AvatarPart>(options.GearIds.Length);
+            var dyeTargetPartsById = new Dictionary<int, AvatarPart>(options.GearIds.Length);
             foreach (int gearId in options.GearIds)
             {
                 AvatarPart targetPart = avatar.AddGear(gearId, required: true);
                 if (targetPart != null)
                 {
                     dyeTargetParts.Add(targetPart);
+                    dyeTargetPartsById[gearId] = targetPart;
                 }
             }
 
@@ -494,6 +528,7 @@ namespace AvatarGifTool
             {
                 RenderMode.DyeGrid => RenderDyeTracks(avatar, dyeTargetParts, options),
                 RenderMode.ExactDye => RenderExactDyeTracks(avatar, dyeTargetParts, options),
+                RenderMode.SeparateDye => RenderSeparateDyeTracks(avatar, dyeTargetPartsById, options),
                 _ => RenderActionTracks(avatar, options.NormalActions),
             };
 
@@ -590,6 +625,58 @@ namespace AvatarGifTool
                 ApplyPrism(targetParts, options.PrismType, 0, 100, 100);
                 avatar.ClearSkinCache();
             }
+        }
+
+        private static List<RenderTrack> RenderSeparateDyeTracks(
+            AvatarBuilder avatar,
+            IReadOnlyDictionary<int, AvatarPart> targetPartsById,
+            CommandOptions options)
+        {
+            List<AvatarPart> appliedParts = ApplySeparateDye(targetPartsById, options.SeparateDyeSettings);
+            if (appliedParts.Count == 0)
+            {
+                throw new InvalidOperationException("separate dye mode requires saved gear dye settings.");
+            }
+
+            avatar.ClearSkinCache();
+            try
+            {
+                return RenderActionTracks(avatar, options.NormalActions);
+            }
+            finally
+            {
+                ApplyPrism(appliedParts, 0, 0, 100, 100);
+                avatar.ClearSkinCache();
+            }
+        }
+
+        private static List<AvatarPart> ApplySeparateDye(
+            IReadOnlyDictionary<int, AvatarPart> targetPartsById,
+            IReadOnlyList<GearDyeSetting> settings)
+        {
+            var appliedParts = new List<AvatarPart>();
+            if (targetPartsById == null || settings == null)
+            {
+                return appliedParts;
+            }
+
+            foreach (GearDyeSetting setting in settings)
+            {
+                if (setting == null || !targetPartsById.TryGetValue(setting.GearId, out AvatarPart targetPart))
+                {
+                    continue;
+                }
+
+                ApplyPrism(
+                    targetPart,
+                    NormalizePrismType(setting.PrismType),
+                    Math.Max(0, Math.Min(359, setting.Hue)),
+                    ClampPrismValue(100 + setting.SaturationOffset),
+                    ClampPrismValue(100 + setting.BrightnessOffset));
+                appliedParts.Add(targetPart);
+            }
+
+            return appliedParts;
         }
 
         private static int ClampPrismValue(int value)
@@ -902,7 +989,9 @@ namespace AvatarGifTool
 
         private static bool RequiresDyeTarget(RenderMode mode)
         {
-            return mode == RenderMode.DyeGrid || mode == RenderMode.ExactDye;
+            return mode == RenderMode.DyeGrid
+                || mode == RenderMode.ExactDye
+                || mode == RenderMode.SeparateDye;
         }
 
         private static Image LoadBackgroundImage(string backgroundImagePath)
@@ -1144,6 +1233,7 @@ namespace AvatarGifTool
             public string[] NormalActions { get; private set; }
             public string DyeAction { get; private set; }
             public WeaponStance WeaponStance { get; private set; }
+            public IReadOnlyList<GearDyeSetting> SeparateDyeSettings { get; private set; }
             public int CellGap { get; private set; }
             public int CanvasPadding { get; private set; }
 
@@ -1167,6 +1257,7 @@ namespace AvatarGifTool
                 IEnumerable<string> normalActions = null,
                 string dyeAction = null,
                 WeaponStance weaponStance = WeaponStance.OneHand,
+                IReadOnlyList<GearDyeSetting> separateDyeSettings = null,
                 int cellGap = 8,
                 int canvasPadding = 8)
             {
@@ -1191,6 +1282,7 @@ namespace AvatarGifTool
                     NormalActions = NormalizeNormalActionSelection(normalActions),
                     DyeAction = NormalizeDyeActionSelection(dyeAction),
                     WeaponStance = NormalizeWeaponStance((int)weaponStance),
+                    SeparateDyeSettings = NormalizeSeparateDyeSettings(separateDyeSettings),
                     CellGap = cellGap,
                     CanvasPadding = canvasPadding,
                 };
@@ -1298,6 +1390,7 @@ namespace AvatarGifTool
                 this.NormalActions = NormalizeNormalActionSelection(this.NormalActions);
                 this.DyeAction = NormalizeDyeActionSelection(this.DyeAction);
                 this.WeaponStance = NormalizeWeaponStance((int)this.WeaponStance);
+                this.SeparateDyeSettings ??= Array.Empty<GearDyeSetting>();
 
                 if (this.GearIds.Any(id => id <= 0))
                 {
@@ -1307,6 +1400,11 @@ namespace AvatarGifTool
                 if (RequiresDyeTarget(this.Mode) && this.GearIds.Length == 0)
                 {
                     throw new ArgumentException("gear is required in dye mode.");
+                }
+
+                if (this.Mode == RenderMode.SeparateDye && this.SeparateDyeSettings.Count == 0)
+                {
+                    throw new ArgumentException("separate dye mode requires saved gear dye settings.");
                 }
 
                 if (this.HueStep <= 0 || this.HueStep > 360)
@@ -2826,6 +2924,7 @@ namespace AvatarGifTool
             ActionStrip = 0,
             DyeGrid = 1,
             ExactDye = 2,
+            SeparateDye = 3,
         }
     }
 }

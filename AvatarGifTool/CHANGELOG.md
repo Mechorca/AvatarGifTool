@@ -13,6 +13,16 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.27.1
+
+- 原“染色模式”更名为“整体染色模式”。
+- 新增“分体染色模式”，染色逻辑与精确染色模式一致，但每个 Gear 可以保存独立的色系、颜色、饱和度和亮度。
+- 分体染色模式下新增“保存当前 Gear 染色”按钮；保存后 Gear 输入框清空，并在下方生成以外观名显示的小按钮。
+- 点击已保存的小按钮会回填该 Gear 及其染色参数；重复保存同一件外观会原位覆盖更新。
+- 分体染色会按已保存参数分别渲染多个 Gear，实时预览与 GIF 导出均支持。
+- 修复染色模式与分体染色模式下 Gear 外观名无法稳定反向映射回 ID 的问题；现在会按 Gear 类型过滤，并支持 `名称#2` 这类重名显示后缀。
+- “历史搭配”标题右侧新增“清空”小按钮，可一键清空全部历史搭配。
+
 ### 2.26.1
 
 - 修复点装武器在枪姿势下仍可能使用单手形态的问题。

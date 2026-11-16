@@ -27,7 +27,31 @@ namespace AvatarGifTool
         public string DyeExportAction { get; set; }
         public string PreviewAction { get; set; } = "stand1";
         public int WeaponStance { get; set; }
+        public List<GearDyeSetting> SeparateDyeItems { get; set; } = new List<GearDyeSetting>();
         public List<TemplateHistoryItem> TemplateHistory { get; set; } = new List<TemplateHistoryItem>();
+    }
+
+    internal sealed class GearDyeSetting
+    {
+        public int GearId { get; set; }
+        public string GearName { get; set; }
+        public int PrismType { get; set; }
+        public int Hue { get; set; }
+        public int SaturationOffset { get; set; }
+        public int BrightnessOffset { get; set; }
+
+        public GearDyeSetting Clone()
+        {
+            return new GearDyeSetting
+            {
+                GearId = this.GearId,
+                GearName = this.GearName,
+                PrismType = this.PrismType,
+                Hue = this.Hue,
+                SaturationOffset = this.SaturationOffset,
+                BrightnessOffset = this.BrightnessOffset,
+            };
+        }
     }
 
     internal sealed class TemplateHistoryItem
