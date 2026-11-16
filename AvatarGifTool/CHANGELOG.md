@@ -13,6 +13,31 @@
 > - The records below are reconstructed from confirmed build artifacts and recent development history.
 > - Versions between `2.0.0` and `2.4.1` do not currently have enough local evidence to restore precise per-version details.
 
+### 2.26.1
+
+- 修复点装武器在枪姿势下仍可能使用单手形态的问题。
+- 点装武器现在按姿势优先选择 `30`（单手）/ `40`（双手）/ `49`（枪）对应的武器形态节点；缺少对应形态时再回退到原有选择。
+
+### 2.26.0
+
+- 设置窗口新增 `武器姿势设置`，可选择单手、双手或枪姿势。
+- 导出时会按所选姿势映射站立、行走、挥砍、刺击和射击动作；仅当当前武器包含对应动作时才会替换，否则保留原动作。
+- 设置窗口会显示普通模式动作在当前姿势下的优先映射结果。
+- 武器姿势会随配置保存，并同步用于实时预览、普通/精确染色导出以及命令行 `--weapon-stance` 参数。
+- 新增 `docs/weapon-stance.md` 记录动作映射和实现位置，新增 `docs/repository-audit.md` 记录 GitHub 地址与密钥核对结果。
+
+### 2.25.3
+
+- Base 文件选择提示目录改为 `mxd/Data/Base/Base.wz`。
+
+### 2.25.2
+
+- 脸型和发型的双击预览改为非模态置顶浮动窗口，不会阻塞主窗口及后方界面的操作。
+
+### 2.25.1
+
+- 搜索结果双击脸型或发型时，会以原项目外观预览的形式显示角色预览图，并保留默认皮肤、另一项外观和基础服装作参照。
+
 ### 2.25.0
 
 - 实时预览模型左右留白恢复为各约 15%。

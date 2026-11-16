@@ -88,6 +88,7 @@ namespace AvatarGifTool
         private readonly ContextMenuStrip cmsSearchResults;
         private readonly ToolStripMenuItem miAddSearchResultToTemplate;
         private AfrmTooltip searchPreviewTooltip;
+        private PreviewImageForm cosmeticPreviewForm;
         private readonly TableLayoutPanel rootLayout;
         private TableLayoutPanel paramsLayout;
         private TableLayoutPanel dyeLayout;
@@ -106,6 +107,7 @@ namespace AvatarGifTool
         private string[] normalExportActions;
         private string dyeExportAction;
         private string previewAction;
+        private Program.WeaponStance weaponStance;
         private List<AppearanceSearchResult> searchResults;
         private bool isBusy;
         private bool isSearching;
@@ -147,6 +149,7 @@ namespace AvatarGifTool
             this.normalExportActions = Program.NormalizeNormalActionSelection(this.config.NormalExportActions);
             this.dyeExportAction = Program.NormalizeDyeActionSelection(this.config.DyeExportAction);
             this.previewAction = Program.NormalizePreviewAction(this.config.PreviewAction);
+            this.weaponStance = Program.NormalizeWeaponStance(this.config.WeaponStance);
 
             this.txtBaseWz = new TextBox { Dock = DockStyle.Fill };
             this.txtTemplate = new AlignedInputBox
@@ -377,6 +380,7 @@ namespace AvatarGifTool
             this.previewFrameSet?.Dispose();
             this.previewFrameSet = null;
             this.CloseSearchPreviewTooltip();
+            this.CloseCosmeticPreview();
             this.metadataResolver.Dispose();
             base.OnFormClosed(e);
         }
@@ -409,6 +413,8 @@ namespace AvatarGifTool
         private string SelectedDyeExportAction => Program.NormalizeDyeActionSelection(this.dyeExportAction);
 
         private string SelectedPreviewAction => Program.NormalizePreviewAction(this.previewAction);
+
+        private Program.WeaponStance SelectedWeaponStance => Program.NormalizeWeaponStance((int)this.weaponStance);
 
         private int SelectedDyePrismType => this.cboDyeColorType.SelectedItem is Program.PrismColorTypeDefinition colorType
             ? colorType.Value
@@ -1022,7 +1028,7 @@ namespace AvatarGifTool
                 Anchor = AnchorStyles.Left,
                 ForeColor = SystemColors.GrayText,
                 Margin = new Padding(0, 7, 0, 0),
-                Text = "需要点选游戏目录下Data/Base/Base.wz",
+                Text = "需要点选游戏目录下mxd/Data/Base/Base.wz",
             }, 2, 0);
 
             this.paramsLayout.Controls.Add(new Label { Text = "Base 文件", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 14, 8) }, 1, 0);
@@ -1999,7 +2005,8 @@ namespace AvatarGifTool
                         this.SelectedHairMixColor,
                         this.SelectedHairMixOpacity,
                         this.SelectedFaceMixColor,
-                        this.SelectedFaceMixOpacity));
+                        this.SelectedFaceMixOpacity,
+                        this.SelectedWeaponStance));
 
                 if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
                 {
@@ -2049,7 +2056,8 @@ namespace AvatarGifTool
                         this.SelectedDyePrismType,
                         (int)this.nudDyeHue.Value,
                         this.trkDyeSaturation.Value,
-                        this.trkDyeBrightness.Value));
+                        this.trkDyeBrightness.Value,
+                        this.SelectedWeaponStance));
 
                 if (requestVersion != this.previewVersion || this.isBusy || this.isSearching)
                 {
@@ -2190,7 +2198,8 @@ namespace AvatarGifTool
             using var dialog = new ExportSettingsForm(
                 this.SelectedNormalExportActions,
                 this.SelectedDyeExportAction,
-                this.SelectedPreviewAction);
+                this.SelectedPreviewAction,
+                this.SelectedWeaponStance);
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
                 return;
@@ -2199,6 +2208,7 @@ namespace AvatarGifTool
             this.normalExportActions = Program.NormalizeNormalActionSelection(dialog.SelectedNormalActions);
             this.dyeExportAction = Program.NormalizeDyeActionSelection(dialog.SelectedDyeAction);
             this.previewAction = Program.NormalizePreviewAction(dialog.SelectedPreviewAction);
+            this.weaponStance = Program.NormalizeWeaponStance((int)dialog.SelectedWeaponStance);
             this.SaveConfig();
             this.MarkPreviewDirty();
         }
@@ -2230,7 +2240,8 @@ namespace AvatarGifTool
                         this.SelectedHairMixColor,
                         this.SelectedHairMixOpacity,
                         this.SelectedFaceMixColor,
-                        this.SelectedFaceMixOpacity));
+                        this.SelectedFaceMixOpacity,
+                        this.SelectedWeaponStance));
 
                 this.txtPreview.Text = preview.PreviewText;
                 this.RememberTemplateHistory(preview);
@@ -2257,7 +2268,8 @@ namespace AvatarGifTool
                     backgroundColor: this.currentBackgroundColor,
                     backgroundImagePath: this.currentBackgroundImagePath,
                     normalActions: this.SelectedNormalExportActions,
-                    dyeAction: this.SelectedDyeExportAction);
+                    dyeAction: this.SelectedDyeExportAction,
+                    weaponStance: this.SelectedWeaponStance);
 
                 this.lblStatus.Text = "正在导出 GIF...";
                 string outputPath = await Task.Run(() => Program.Execute(options, manageWzContext: false));
@@ -2463,6 +2475,12 @@ namespace AvatarGifTool
                     return;
                 }
 
+                if (result.Kind == Program.AppearanceIdKind.Face || result.Kind == Program.AppearanceIdKind.Hair)
+                {
+                    this.ShowCosmeticPreview(result, previewImage);
+                    return;
+                }
+
                 using (DpiAwarenessScope.EnterReferencePreviewMode())
                 using (var form = new PreviewImageForm(result, previewImage))
                 {
@@ -2478,6 +2496,42 @@ namespace AvatarGifTool
             {
                 this.UseWaitCursor = false;
             }
+        }
+
+        private void ShowCosmeticPreview(AppearanceSearchResult result, SearchPreviewImage previewImage)
+        {
+            this.CloseCosmeticPreview();
+
+            using var dpiScope = DpiAwarenessScope.EnterReferencePreviewMode();
+            var form = new PreviewImageForm(result, previewImage)
+            {
+                TopMost = true,
+            };
+            form.FormClosed += this.CosmeticPreviewForm_FormClosed;
+            form.Show(this);
+            form.BringToFront();
+            this.cosmeticPreviewForm = form;
+        }
+
+        private void CosmeticPreviewForm_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            if (ReferenceEquals(sender, this.cosmeticPreviewForm))
+            {
+                this.cosmeticPreviewForm = null;
+            }
+        }
+
+        private void CloseCosmeticPreview()
+        {
+            if (this.cosmeticPreviewForm == null)
+            {
+                return;
+            }
+
+            this.cosmeticPreviewForm.FormClosed -= this.CosmeticPreviewForm_FormClosed;
+            this.cosmeticPreviewForm.Close();
+            this.cosmeticPreviewForm.Dispose();
+            this.cosmeticPreviewForm = null;
         }
 
         private void ShowOriginalTooltip(AppearanceSearchResult result, object targetItem)
@@ -3105,6 +3159,7 @@ namespace AvatarGifTool
             this.config.NormalExportActions = this.SelectedNormalExportActions.ToList();
             this.config.DyeExportAction = this.SelectedDyeExportAction;
             this.config.PreviewAction = this.SelectedPreviewAction;
+            this.config.WeaponStance = (int)this.SelectedWeaponStance;
             this.config.TemplateHistory = NormalizeTemplateHistory(this.templateHistory);
 
             this.configStore.Save(this.config);
@@ -3233,7 +3288,8 @@ namespace AvatarGifTool
             int hairMixColor,
             int hairMixOpacity,
             int faceMixColor,
-            int faceMixOpacity)
+            int faceMixOpacity,
+            Program.WeaponStance weaponStance)
         {
             this.EnsureLoaded(baseWzPath);
 
@@ -3243,6 +3299,7 @@ namespace AvatarGifTool
             faceMixColor = ClampColorIndex(faceMixColor, Program.SupportedFaceMixColors.Count);
             hairMixOpacity = ClampMixOpacity(hairMixOpacity);
             faceMixOpacity = ClampMixOpacity(faceMixOpacity);
+            weaponStance = Program.NormalizeWeaponStance((int)weaponStance);
             Program.TemplateAnalysis analysis = Program.AnalyzeTemplate(templateText, this.ClassifyAppearanceId);
             string[] selectedNormalActions = Program.NormalizeNormalActionSelection(normalActions);
             string selectedDyeAction = Program.NormalizeDyeActionSelection(dyeAction);
@@ -3311,11 +3368,16 @@ namespace AvatarGifTool
             string[] selectedActionsForFileName = dyeGridMode
                 ? new[] { selectedDyeAction }
                 : selectedNormalActions;
+            var extraFileNameParts = BuildCosmeticMixFileNameParts(hairMixColor, hairMixOpacity, faceMixColor, faceMixOpacity).ToList();
+            if (weaponStance != Program.WeaponStance.OneHand)
+            {
+                extraFileNameParts.Add($"武器姿势{Program.GetWeaponStanceDisplayName(weaponStance)}");
+            }
             string fileBaseName = BuildFileBaseName(
                 fileNameEntries.Where(entry => entry.Id.HasValue).Select(entry => entry.Name),
                 renderMode,
                 selectedActionsForFileName,
-                BuildCosmeticMixFileNameParts(hairMixColor, hairMixOpacity, faceMixColor, faceMixOpacity));
+                extraFileNameParts);
             string outputPath = Path.Combine(AppContext.BaseDirectory, fileBaseName + ".gif");
 
             var lines = new List<string>();
@@ -3358,6 +3420,7 @@ namespace AvatarGifTool
                 lines.Add($"瞳色混染: {Program.SupportedFaceMixColors[faceMixColor]} {faceMixOpacity}%");
             }
             lines.Add($"导出动作: {string.Join(" / ", selectedActionsForFileName)}");
+            lines.Add($"武器姿势: {Program.GetWeaponStanceDisplayName(weaponStance)}");
             lines.Add(string.Empty);
             lines.Add($"导出文件名: {fileBaseName}.gif");
             lines.Add($"导出目录: {AppContext.BaseDirectory}");
@@ -3479,6 +3542,15 @@ namespace AvatarGifTool
         public SearchPreviewImage LoadPreviewImage(string baseWzPath, AppearanceSearchResult result)
         {
             this.EnsureLoaded(baseWzPath);
+
+            if (result?.Kind == Program.AppearanceIdKind.Face || result?.Kind == Program.AppearanceIdKind.Hair)
+            {
+                Bitmap cosmeticPreview = Program.RenderCosmeticPreview(result.Id);
+                if (cosmeticPreview != null)
+                {
+                    return new SearchPreviewImage(cosmeticPreview, false);
+                }
+            }
 
             Bitmap tooltipBitmap = this.RenderTooltipBitmap(result);
             if (tooltipBitmap != null)
@@ -4659,17 +4731,31 @@ namespace AvatarGifTool
         private readonly List<CheckBox> normalActionChecks;
         private readonly List<RadioButton> dyeActionRadios;
         private readonly List<RadioButton> previewActionRadios;
+        private readonly List<RadioButton> weaponStanceRadios;
+        private readonly Label weaponStanceHint;
         private readonly Button btnOk;
 
-        public ExportSettingsForm(IEnumerable<string> selectedNormalActions, string selectedDyeAction, string selectedPreviewAction)
+        public ExportSettingsForm(
+            IEnumerable<string> selectedNormalActions,
+            string selectedDyeAction,
+            string selectedPreviewAction,
+            Program.WeaponStance selectedWeaponStance)
         {
             string[] normalizedNormalActions = Program.NormalizeNormalActionSelection(selectedNormalActions);
             string normalizedDyeAction = Program.NormalizeDyeActionSelection(selectedDyeAction);
             string normalizedPreviewAction = Program.NormalizePreviewAction(selectedPreviewAction);
+            Program.WeaponStance normalizedWeaponStance = Program.NormalizeWeaponStance((int)selectedWeaponStance);
 
             this.normalActionChecks = new List<CheckBox>();
             this.dyeActionRadios = new List<RadioButton>();
             this.previewActionRadios = new List<RadioButton>();
+            this.weaponStanceRadios = new List<RadioButton>();
+            this.weaponStanceHint = new Label
+            {
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0, 8, 0, 0),
+            };
             this.btnOk = new Button
             {
                 Text = "确定",
@@ -4687,7 +4773,7 @@ namespace AvatarGifTool
             this.MinimizeBox = false;
             this.ShowInTaskbar = false;
             this.Padding = new Padding(12);
-            this.ClientSize = new Size(920, 380);
+            this.ClientSize = new Size(920, 470);
 
             var rootLayout = new TableLayoutPanel
             {
@@ -4696,8 +4782,8 @@ namespace AvatarGifTool
                 RowCount = 3,
             };
             rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             var bodyLayout = new TableLayoutPanel
@@ -4746,13 +4832,15 @@ namespace AvatarGifTool
             footerLayout.Controls.Add(btnCancel);
             footerLayout.Controls.Add(this.btnOk);
 
-            rootLayout.Controls.Add(bodyLayout, 0, 0);
-            rootLayout.Controls.Add(footerLayout, 0, 1);
+            rootLayout.Controls.Add(this.BuildWeaponStanceGroup(normalizedWeaponStance), 0, 0);
+            rootLayout.Controls.Add(bodyLayout, 0, 1);
+            rootLayout.Controls.Add(footerLayout, 0, 2);
             this.Controls.Add(rootLayout);
 
             this.AcceptButton = this.btnOk;
             this.CancelButton = btnCancel;
             this.UpdateOkButtonEnabled();
+            this.UpdateWeaponStanceHint();
         }
 
         public IReadOnlyList<string> SelectedNormalActions => Program.NormalizeNormalActionSelection(
@@ -4763,6 +4851,63 @@ namespace AvatarGifTool
 
         public string SelectedPreviewAction => Program.NormalizePreviewAction(
             this.previewActionRadios.FirstOrDefault(radio => radio.Checked)?.Tag as string);
+
+        public Program.WeaponStance SelectedWeaponStance => Program.NormalizeWeaponStance(
+            this.weaponStanceRadios.FirstOrDefault(radio => radio.Checked)?.Tag is int value ? value : 0);
+
+        private GroupBox BuildWeaponStanceGroup(Program.WeaponStance selectedWeaponStance)
+        {
+            var group = new GroupBox
+            {
+                Text = "武器姿势设置",
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 8),
+                Padding = new Padding(12, 16, 12, 12),
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                AutoSize = true,
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            var stanceLayout = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0),
+            };
+
+            var options = new[]
+            {
+                (Stance: Program.WeaponStance.OneHand, Text: "单手"),
+                (Stance: Program.WeaponStance.TwoHand, Text: "双手"),
+                (Stance: Program.WeaponStance.Gun, Text: "枪"),
+            };
+            foreach ((Program.WeaponStance stance, string text) in options)
+            {
+                var radioButton = new RadioButton
+                {
+                    Text = text,
+                    Tag = (int)stance,
+                    AutoSize = true,
+                    Checked = stance == selectedWeaponStance,
+                    Margin = new Padding(0, 0, 28, 0),
+                };
+                radioButton.CheckedChanged += this.ActionSelectionControl_Changed;
+                this.weaponStanceRadios.Add(radioButton);
+                stanceLayout.Controls.Add(radioButton);
+            }
+
+            layout.Controls.Add(stanceLayout);
+            layout.Controls.Add(this.weaponStanceHint);
+
+            group.Controls.Add(layout);
+            return group;
+        }
 
         private GroupBox BuildNormalActionsGroup(IReadOnlyCollection<string> selectedNormalActions)
         {
@@ -4902,13 +5047,27 @@ namespace AvatarGifTool
         private void ActionSelectionControl_Changed(object sender, EventArgs e)
         {
             this.UpdateOkButtonEnabled();
+            this.UpdateWeaponStanceHint();
         }
 
         private void UpdateOkButtonEnabled()
         {
             this.btnOk.Enabled = this.normalActionChecks.Any(check => check.Checked)
                 && this.dyeActionRadios.Any(radio => radio.Checked)
-                && this.previewActionRadios.Any(radio => radio.Checked);
+                && this.previewActionRadios.Any(radio => radio.Checked)
+                && this.weaponStanceRadios.Any(radio => radio.Checked);
+        }
+
+        private void UpdateWeaponStanceHint()
+        {
+            if (this.weaponStanceHint == null || !this.weaponStanceRadios.Any(radio => radio.Checked))
+            {
+                return;
+            }
+
+            Program.WeaponStance stance = this.SelectedWeaponStance;
+            string mappedActions = Program.DescribeWeaponStanceActionMapping(this.SelectedNormalActions, stance);
+            this.weaponStanceHint.Text = $"优先动作：{mappedActions}。仅当武器包含对应动作时生效，否则保留原动作。";
         }
 
         private void BtnOk_Click(object sender, EventArgs e)
@@ -4928,6 +5087,12 @@ namespace AvatarGifTool
             if (!this.previewActionRadios.Any(radio => radio.Checked))
             {
                 MessageBox.Show(this, "预览姿势需要选择一个动作。", "导出设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!this.weaponStanceRadios.Any(radio => radio.Checked))
+            {
+                MessageBox.Show(this, "武器姿势需要选择单手、双手或枪。", "导出设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 

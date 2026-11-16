@@ -31,6 +31,15 @@ namespace AvatarGifTool
             "jump",
             "walk1",
         };
+        internal enum WeaponStance
+        {
+            OneHand = 1,
+            TwoHand = 2,
+            Gun = 3,
+        }
+        private const int CashWeaponOneHandMotionType = 30;
+        private const int CashWeaponTwoHandMotionType = 40;
+        private const int CashWeaponGunMotionType = 49;
         private const int DyeHueColumnCount = 3;
         private static readonly (int SaturationOffset, int BrightnessOffset, string Key)[] DyeExtremeAdjustmentVariants = new[]
         {
@@ -51,6 +60,107 @@ namespace AvatarGifTool
         };
 
         internal static IReadOnlyList<string> SupportedExportActions => ActionStripActions;
+
+        internal static WeaponStance NormalizeWeaponStance(int stance)
+        {
+            return Enum.IsDefined(typeof(WeaponStance), stance)
+                ? (WeaponStance)stance
+                : WeaponStance.OneHand;
+        }
+
+        internal static string GetWeaponStanceDisplayName(WeaponStance stance)
+        {
+            return stance switch
+            {
+                WeaponStance.TwoHand => "双手",
+                WeaponStance.Gun => "枪",
+                _ => "单手",
+            };
+        }
+
+        internal static string MapWeaponStanceActionName(string actionName, WeaponStance stance)
+        {
+            string action = actionName?.Trim();
+            if (string.IsNullOrWhiteSpace(action))
+            {
+                return actionName;
+            }
+
+            if (string.Equals(action, "stand1", StringComparison.OrdinalIgnoreCase))
+            {
+                return stance == WeaponStance.TwoHand ? "stand2" : "stand1";
+            }
+
+            if (string.Equals(action, "stand2", StringComparison.OrdinalIgnoreCase))
+            {
+                return stance == WeaponStance.TwoHand ? "stand2" : "stand1";
+            }
+
+            if (string.Equals(action, "walk1", StringComparison.OrdinalIgnoreCase))
+            {
+                return stance == WeaponStance.TwoHand ? "walk2" : "walk1";
+            }
+
+            if (string.Equals(action, "walk2", StringComparison.OrdinalIgnoreCase))
+            {
+                return stance == WeaponStance.TwoHand ? "walk2" : "walk1";
+            }
+
+            if (action.StartsWith("swingO", StringComparison.OrdinalIgnoreCase))
+            {
+                string suffix = action.Substring("swingO".Length);
+                return stance switch
+                {
+                    WeaponStance.TwoHand => "swingT" + suffix,
+                    WeaponStance.Gun => "shoot" + suffix,
+                    _ => "swingO" + suffix,
+                };
+            }
+
+            if (action.StartsWith("swingT", StringComparison.OrdinalIgnoreCase))
+            {
+                string suffix = action.Substring("swingT".Length);
+                return stance switch
+                {
+                    WeaponStance.TwoHand => "swingT" + suffix,
+                    WeaponStance.Gun => "shoot" + suffix,
+                    _ => "swingO" + suffix,
+                };
+            }
+
+            if (action.StartsWith("stabO", StringComparison.OrdinalIgnoreCase))
+            {
+                string suffix = action.Substring("stabO".Length);
+                return stance switch
+                {
+                    WeaponStance.TwoHand => "stabT" + suffix,
+                    WeaponStance.Gun => "shoot" + suffix,
+                    _ => "stabO" + suffix,
+                };
+            }
+
+            if (action.StartsWith("stabT", StringComparison.OrdinalIgnoreCase))
+            {
+                string suffix = action.Substring("stabT".Length);
+                return stance switch
+                {
+                    WeaponStance.TwoHand => "stabT" + suffix,
+                    WeaponStance.Gun => "shoot" + suffix,
+                    _ => "stabO" + suffix,
+                };
+            }
+
+            return action;
+        }
+
+        internal static string DescribeWeaponStanceActionMapping(IEnumerable<string> selectedActions, WeaponStance stance)
+        {
+            string[] mappedActions = NormalizeNormalActionSelection(selectedActions)
+                .Select(action => MapWeaponStanceActionName(action, stance))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return string.Join(" / ", mappedActions);
+        }
 
         internal static IReadOnlyList<PrismColorTypeDefinition> SupportedPrismColorTypes => PrismColorTypeDefinitions;
 
@@ -188,7 +298,8 @@ namespace AvatarGifTool
             int prismType,
             int hue,
             int saturationOffset,
-            int brightnessOffset)
+            int brightnessOffset,
+            WeaponStance weaponStance = WeaponStance.OneHand)
         {
             using PreviewFrameSet frameSet = RenderPreviewStand1Frames(
                 templateText,
@@ -202,13 +313,41 @@ namespace AvatarGifTool
                 prismType,
                 hue,
                 saturationOffset,
-                brightnessOffset);
+                brightnessOffset,
+                weaponStance);
             if (frameSet == null || frameSet.Count == 0)
             {
                 return null;
             }
 
             return new Bitmap(frameSet.Frames[0]);
+        }
+
+        internal static Bitmap RenderCosmeticPreview(int appearanceId)
+        {
+            AppearanceIdKind kind = DetectAppearanceIdKind(appearanceId);
+            if (kind != AppearanceIdKind.Face && kind != AppearanceIdKind.Hair)
+            {
+                return null;
+            }
+
+            int skinId = TryResolveDefaultSkinId(out int resolvedSkinId) ? resolvedSkinId : 2000;
+            int faceId = kind == AppearanceIdKind.Face ? appearanceId : 53065;
+            int hairId = kind == AppearanceIdKind.Hair ? appearanceId : 64460;
+            string template = $"{skinId},{faceId},{hairId},1042194,1062153";
+
+            return RenderPreviewStand1(
+                template,
+                gearText: null,
+                renderMode: RenderMode.ActionStrip,
+                hairMixColor: 0,
+                hairMixOpacity: 0,
+                faceMixColor: 0,
+                faceMixOpacity: 0,
+                prismType: 0,
+                hue: 0,
+                saturationOffset: 0,
+                brightnessOffset: 0);
         }
 
         internal static PreviewFrameSet RenderPreviewStand1Frames(
@@ -223,14 +362,15 @@ namespace AvatarGifTool
             int prismType,
             int hue,
             int saturationOffset,
-            int brightnessOffset)
+            int brightnessOffset,
+            WeaponStance weaponStance = WeaponStance.OneHand)
         {
             AvatarTemplate template = AvatarTemplate.Parse(templateText, DetectAppearanceIdKind);
             int[] gearIds = string.IsNullOrWhiteSpace(gearText)
                 ? Array.Empty<int>()
                 : ParseIdList(gearText, "Gear");
 
-            using var avatar = new AvatarBuilder();
+            using var avatar = new AvatarBuilder(weaponStance);
 
             avatar.AddBodyFromSkin(template.Skin);
             avatar.AddHairOrFace(template.Face);
@@ -317,7 +457,7 @@ namespace AvatarGifTool
         {
             AvatarTemplate template = AvatarTemplate.Parse(options.Template, DetectAppearanceIdKind);
 
-            using var avatar = new AvatarBuilder();
+            using var avatar = new AvatarBuilder(options.WeaponStance);
 
             avatar.AddBodyFromSkin(template.Skin);
             avatar.AddHairOrFace(template.Face);
@@ -375,10 +515,17 @@ namespace AvatarGifTool
             string emotion = avatar.GetStandardEmotion();
             string[] selectedActions = NormalizeNormalActionSelection(actionNames).ToArray();
             var tracks = new List<RenderTrack>(selectedActions.Length);
+            var renderedActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (string actionName in selectedActions)
             {
-                tracks.Add(RenderSingleTrack(avatar, actionName, emotion, actionName));
+                string resolvedAction = avatar.ResolveActionName(actionName);
+                if (!renderedActions.Add(resolvedAction))
+                {
+                    continue;
+                }
+
+                tracks.Add(RenderSingleTrack(avatar, resolvedAction, emotion, resolvedAction));
             }
 
             return tracks;
@@ -505,21 +652,22 @@ namespace AvatarGifTool
 
         private static RenderTrack RenderSingleTrack(AvatarBuilder avatar, string actionName, string emotionName, string key)
         {
-            ActionFrame[] bodyFrames = avatar.GetActionFrames(actionName);
+            string resolvedActionName = avatar.ResolveActionName(actionName);
+            ActionFrame[] bodyFrames = avatar.GetActionFrames(resolvedActionName);
             if (bodyFrames == null || bodyFrames.Length == 0)
             {
-                throw new InvalidOperationException($"Action '{actionName}' has no frames.");
+                throw new InvalidOperationException($"Action '{resolvedActionName}' has no frames.");
             }
 
             ActionFrame[] faceFrames = avatar.GetFaceFrames(emotionName);
-            ActionFrame[][] effectFrames = avatar.GetEffectFrames(actionName);
+            ActionFrame[][] effectFrames = avatar.GetEffectFrames(resolvedActionName);
             int[] bodyDelays = bodyFrames
                 .Select(frame => NormalizeFrameDelay(frame?.AbsoluteDelay ?? 0))
                 .ToArray();
             int totalDuration = bodyDelays.Sum();
             if (totalDuration <= 0)
             {
-                throw new InvalidOperationException($"Action '{actionName}' has no valid frame delays.");
+                throw new InvalidOperationException($"Action '{resolvedActionName}' has no valid frame delays.");
             }
 
             var track = new RenderTrack
@@ -581,7 +729,7 @@ namespace AvatarGifTool
 
             if (track.Frames.Count == 0 || !bounds.HasValue)
             {
-                throw new InvalidOperationException($"Action '{actionName}' rendered no bitmap frames.");
+                throw new InvalidOperationException($"Action '{resolvedActionName}' rendered no bitmap frames.");
             }
 
             track.Bounds = bounds.Value;
@@ -923,6 +1071,7 @@ namespace AvatarGifTool
                 "  --bg-image       Optional background image path. Supports png/jpg and uses cover scaling with crop.",
                 "  --actions        Optional normal-mode action list. Example: stand1,swingO1,jump",
                 "  --dye-action     Optional single action for dye mode. Default: stand1.",
+                "  --weapon-stance  Weapon stance: one-hand, two-hand or gun. Default: one-hand.",
                 "  --cell-gap       Default 8.",
                 "  --canvas-padding Default 8.",
                 "",
@@ -934,6 +1083,7 @@ namespace AvatarGifTool
                 "",
                 "Notes:",
                 "  normal mode defaults to stand1, swingO1, swingO2, shoot1, jump, walk1 and auto-arranges near square.",
+                "  weapon stance only remaps actions that the equipped weapon actually supports; unsupported mappings fall back to the original action.",
                 "  dye mode defaults to stand1, gear is required, hue 0..330 with step 30 by default, arranged as 3 hue columns plus one saturation/brightness extreme column.",
                 "  exact dye mode uses the normal-mode action list and applies one manually specified dye setting.",
             });
@@ -993,6 +1143,7 @@ namespace AvatarGifTool
             public string BackgroundImagePath { get; private set; }
             public string[] NormalActions { get; private set; }
             public string DyeAction { get; private set; }
+            public WeaponStance WeaponStance { get; private set; }
             public int CellGap { get; private set; }
             public int CanvasPadding { get; private set; }
 
@@ -1015,6 +1166,7 @@ namespace AvatarGifTool
                 string backgroundImagePath = null,
                 IEnumerable<string> normalActions = null,
                 string dyeAction = null,
+                WeaponStance weaponStance = WeaponStance.OneHand,
                 int cellGap = 8,
                 int canvasPadding = 8)
             {
@@ -1038,6 +1190,7 @@ namespace AvatarGifTool
                     BackgroundImagePath = string.IsNullOrWhiteSpace(backgroundImagePath) ? null : backgroundImagePath.Trim(),
                     NormalActions = NormalizeNormalActionSelection(normalActions),
                     DyeAction = NormalizeDyeActionSelection(dyeAction),
+                    WeaponStance = NormalizeWeaponStance((int)weaponStance),
                     CellGap = cellGap,
                     CanvasPadding = canvasPadding,
                 };
@@ -1115,6 +1268,7 @@ namespace AvatarGifTool
                     BackgroundImagePath = NormalizeOptionalPath(GetOptional(values, "bg-image", null)),
                     NormalActions = NormalizeNormalActionSelection(ParseOptionalActionList(GetOptional(values, "actions", null), "actions")),
                     DyeAction = NormalizeDyeActionSelection(ParseOptionalAction(GetOptional(values, "dye-action", null), "dye-action")),
+                    WeaponStance = ParseWeaponStance(GetOptional(values, "weapon-stance", "one-hand")),
                     CellGap = ParseInt(GetOptional(values, "cell-gap", "8"), "cell-gap"),
                     CanvasPadding = ParseInt(GetOptional(values, "canvas-padding", "8"), "canvas-padding"),
                 };
@@ -1143,6 +1297,7 @@ namespace AvatarGifTool
                 this.GearIds ??= Array.Empty<int>();
                 this.NormalActions = NormalizeNormalActionSelection(this.NormalActions);
                 this.DyeAction = NormalizeDyeActionSelection(this.DyeAction);
+                this.WeaponStance = NormalizeWeaponStance((int)this.WeaponStance);
 
                 if (this.GearIds.Any(id => id <= 0))
                 {
@@ -1276,6 +1431,38 @@ namespace AvatarGifTool
                 }
 
                 return action;
+            }
+
+            private static WeaponStance ParseWeaponStance(string value)
+            {
+                string text = value?.Trim();
+                if (string.IsNullOrWhiteSpace(text)
+                    || string.Equals(text, "one-hand", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "onehand", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "1h", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "单手", StringComparison.OrdinalIgnoreCase)
+                    || text == "1")
+                {
+                    return WeaponStance.OneHand;
+                }
+
+                if (string.Equals(text, "two-hand", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "twohand", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "2h", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "双手", StringComparison.OrdinalIgnoreCase)
+                    || text == "2")
+                {
+                    return WeaponStance.TwoHand;
+                }
+
+                if (string.Equals(text, "gun", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "枪", StringComparison.OrdinalIgnoreCase)
+                    || text == "3")
+                {
+                    return WeaponStance.Gun;
+                }
+
+                throw new ArgumentException($"Argument 'weapon-stance' must be one of: one-hand, two-hand, gun.");
             }
 
             private static int ParseInt(string value, string key)
@@ -2093,15 +2280,66 @@ namespace AvatarGifTool
         private sealed class AvatarBuilder : IDisposable
         {
             private readonly AvatarCanvas canvas;
+            private readonly HashSet<string> weaponActionNames;
+            private readonly WeaponStance weaponStance;
             private int weaponType;
+            private bool hasWeapon;
 
-            public AvatarBuilder()
+            public AvatarBuilder(WeaponStance weaponStance)
             {
                 this.canvas = new AvatarCanvas();
                 this.canvas.LoadZ();
                 this.canvas.LoadActions();
                 this.canvas.LoadEmotions();
+                this.weaponActionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                this.weaponStance = weaponStance;
                 this.weaponType = 0;
+            }
+
+            public string ResolveActionName(string actionName)
+            {
+                string mappedAction = MapWeaponStanceActionName(actionName, this.weaponStance);
+                if (string.Equals(mappedAction, actionName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return actionName;
+                }
+
+                if (!this.HasBodyAction(mappedAction))
+                {
+                    return actionName;
+                }
+
+                if (!this.hasWeapon || !this.weaponActionNames.Contains(mappedAction))
+                {
+                    return actionName;
+                }
+
+                return mappedAction;
+            }
+
+            private bool HasBodyAction(string actionName)
+            {
+                return this.canvas.Actions.Any(action =>
+                    string.Equals(action?.Name, actionName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            private void SetWeaponNode(Wz_Node weaponNode)
+            {
+                this.hasWeapon = weaponNode != null;
+                this.weaponActionNames.Clear();
+                if (weaponNode == null)
+                {
+                    return;
+                }
+
+                foreach (Wz_Node childNode in weaponNode.Nodes)
+                {
+                    if (!string.IsNullOrWhiteSpace(childNode?.Text)
+                        && !string.Equals(childNode.Text, "info", StringComparison.OrdinalIgnoreCase))
+                    {
+                        this.weaponActionNames.Add(childNode.Text);
+                    }
+                }
             }
 
             public void AddBodyFromSkin(int skin)
@@ -2329,6 +2567,7 @@ namespace AvatarGifTool
                 {
                     this.weaponType = (int)type;
                     this.canvas.WeaponType = this.weaponType;
+                    this.SetWeaponNode(gearNode);
                     return;
                 }
 
@@ -2343,14 +2582,31 @@ namespace AvatarGifTool
                     return;
                 }
 
-                if (this.weaponType != 0 && cashWeaponTypes.Contains(this.weaponType))
+                this.weaponType = this.SelectCashWeaponType(cashWeaponTypes);
+                this.canvas.WeaponType = this.weaponType;
+                this.SetWeaponNode(gearNode.FindNodeByPath(this.weaponType.ToString()));
+            }
+
+            private int SelectCashWeaponType(List<int> cashWeaponTypes)
+            {
+                int preferredType = this.weaponStance switch
                 {
-                    this.canvas.WeaponType = this.weaponType;
-                    return;
+                    WeaponStance.TwoHand => CashWeaponTwoHandMotionType,
+                    WeaponStance.Gun => CashWeaponGunMotionType,
+                    _ => CashWeaponOneHandMotionType,
+                };
+
+                if (cashWeaponTypes.Contains(preferredType))
+                {
+                    return preferredType;
                 }
 
-                this.weaponType = cashWeaponTypes[0];
-                this.canvas.WeaponType = this.weaponType;
+                if (this.weaponType != 0 && cashWeaponTypes.Contains(this.weaponType))
+                {
+                    return this.weaponType;
+                }
+
+                return cashWeaponTypes[0];
             }
 
             private static List<int> GetCashWeaponTypes(Wz_Node gearNode)
